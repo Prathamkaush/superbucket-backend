@@ -4,8 +4,9 @@ export class CreateReviewDto {
   @IsInt()
   productId: number;
 
+  @IsOptional()
   @IsInt()
-  orderId: number;
+  orderId?: number;
 
   @IsInt()
   @Min(1)

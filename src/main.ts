@@ -1,68 +1,123 @@
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
-import { join } from 'path';
-import * as express from 'express';
-import { ValidationPipe } from '@nestjs/common';
+import { NestFactory } from "@nestjs/core";
+import { AppModule } from "./app.module";
+import { join } from "path";
+import * as express from "express";
+import { ValidationPipe } from "@nestjs/common";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
+import * as dotenv from "dotenv";
+
+dotenv.config();
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    logger: ["error", "warn", "log", "debug", "verbose"],
+    bodyParser: false,
+  });
 
-  // CORS Configuration
-  app.enableCors({
-  origin: [
+  // =====================================================
+  // TRUST PROXY (nginx / Cloudflare)
+  // =====================================================
+  const server = app.getHttpAdapter().getInstance();
+  server.set("trust proxy", 1);
+
+  // =====================================================
+  // BODY LIMITS
+  // =====================================================
+  app.use(express.json({ limit: "100mb" }));
+  app.use(express.urlencoded({ limit: "100mb", extended: true }));
+
+  // =====================================================
+  // CORS (NestJS ONLY — nginx is neutral)
+  // =====================================================
+  const allowedOrigins = [
     "http://localhost:3000",
     "http://localhost:3001",
-    "https://yourdomain.com",
-    "https://admin.yourdomain.com",
-  ],
-  credentials: true,
-  methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
-  allowedHeaders: "Content-Type, Authorization",
-});
 
-  // Static file serving
-  app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
-  app.use('/uploads/products', express.static(join(process.cwd(), 'uploads/products')));
+    // User frontend
+    "https://www.firstfemale.in",
+    "https://firstfemale.in",
 
-  // Global validation pipe
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true,
-    transform: true,
-    transformOptions: {
-      enableImplicitConversion: true,
+    // Admin frontend
+    "https://www.v2admin.firstfemale.in",
+    "https://v2admin.firstfemale.in",
+
+    // Legacy
+    "https://first-female-users.vercel.app",
+    "https://first-female-admin.vercel.app",
+
+    // Swagger UI
+    "https://api.firstfemale.in",
+  ];
+
+  app.enableCors({
+    origin: (origin, callback) => {
+      // allow Postman / curl / server-side
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("CORS blocked"), false);
     },
-  }));
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], // ✅ IMPORTANT
+    allowedHeaders: ["Content-Type", "Authorization"],
+  });
 
-  // ================== SWAGGER ==================
+  // =====================================================
+  // STATIC FILES
+  // =====================================================
+  app.use("/uploads", express.static(join(process.cwd(), "uploads")));
+
+  // =====================================================
+  // VALIDATION
+  // =====================================================
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      transformOptions: { enableImplicitConversion: true },
+    }),
+  );
+
+  // =====================================================
+  // ENV CHECK
+  // =====================================================
+  console.log("🔑 RAZORPAY_KEY_ID =", process.env.RAZORPAY_KEY_ID);
+  console.log(
+    "🔑 RAZORPAY_KEY_SECRET exists =",
+    Boolean(process.env.RAZORPAY_KEY_SECRET),
+  );
+
+  // =====================================================
+  // SWAGGER
+  // =====================================================
   const config = new DocumentBuilder()
     .setTitle("FirstFemale API")
     .setDescription("E-commerce backend API documentation")
     .setVersion("1.0")
+    .addServer("https://api.firstfemale.in")
     .addBearerAuth(
       {
         type: "http",
         scheme: "bearer",
         bearerFormat: "JWT",
-        in: "header",
       },
-      "JWT-auth"
+      "JWT-auth",
     )
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup("api/docs", app, document);
 
-  
-  const PORT = 3030;
-  await app.listen(PORT);
-  
-  console.log('🚀 Backend running on http://localhost:3030');
-  console.log('📦 API Endpoints:');
-  console.log('   - POST http://localhost:3030/auth/send-otp');
-  console.log('   - POST http://localhost:3030/auth/verify-otp');
-  console.log('   - POST http://localhost:3030/cart/add');
-  console.log('   - GET  http://localhost:3030/cart');
-  console.log('   - POST http://localhost:3030/orders');
+  // =====================================================
+  // START SERVER
+  // =====================================================
+  const PORT = process.env.PORT || 3030;
+  await app.listen(PORT, "0.0.0.0");
+
+  console.log(`🚀 Backend running on port ${PORT}`);
 }
+
 bootstrap();

@@ -40,6 +40,11 @@ export class WishlistController {
           type: "number",
           example: 19,
         },
+        variantId: {
+          type: "number",
+          example: 7,
+          nullable: true,
+        },
       },
       required: ["productId"],
     },
@@ -48,11 +53,12 @@ export class WishlistController {
   @ApiResponse({ status: 401, description: "Unauthorized" })
   toggle(
     @Req() req,
-    @Body() body: { productId: number }
+    @Body() body: { productId: number; variantId?: number }
   ) {
     return this.wishlistService.toggleWishlist(
       req.user.id,
-      body.productId
+      body.productId,
+      body.variantId
     );
   }
 
@@ -84,11 +90,13 @@ export class WishlistController {
   @ApiResponse({ status: 401, description: "Unauthorized" })
   check(
     @Req() req: any,
-    @Query("productId") productId: string
+    @Query("productId") productId: string,
+    @Query("variantId") variantId?: string
   ) {
     return this.wishlistService.isWishlisted(
       req.user.id,
-      Number(productId)
+      Number(productId),
+      variantId ? Number(variantId) : undefined
     );
   }
 }

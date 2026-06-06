@@ -5,7 +5,6 @@ import {
   Get,
   UseGuards,
   Req,
-  BadRequestException,
 } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { JwtAuthGuard } from "./strategies/jwt-auth.guard";
@@ -22,24 +21,27 @@ import {
 } from "@nestjs/swagger";
 
 // ---------------- DTOs ----------------
-class SendOtpDto {
-  @IsString()
-  @IsNotEmpty()
-  phone: string;
-}
-
-class VerifyOtpDto {
-  @IsString()
-  @IsNotEmpty()
-  phone: string;
-
-  @IsString()
-  @IsNotEmpty()
-  otp: string;
-}
-
 class LoginDto {
+  @IsEmail()
   email: string;
+
+  @IsString()
+  @IsNotEmpty()
+  password: string;
+}
+
+class RegisterDto {
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  fullName?: string;
+
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  @IsNotEmpty()
   password: string;
 }
 
@@ -59,40 +61,6 @@ class AdminLoginDto {
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  // ---------------- SEND OTP ----------------
-  @ApiOperation({
-    summary: "Send OTP to phone number",
-    description: "Sends OTP for login/signup using phone number",
-  })
-  @ApiBody({ type: SendOtpDto })
-  @ApiBadRequestResponse({ description: "Phone number is required" })
-  @Post("send-otp")
-  sendOtp(@Body() body: SendOtpDto) {
-    if (!body || !body.phone) {
-      throw new BadRequestException("Phone number is required");
-    }
-
-    return this.authService.sendOtp(body.phone);
-  }
-
-  // ---------------- VERIFY OTP ----------------
-  @ApiOperation({
-    summary: "Verify OTP and login/signup user",
-    description: "Verifies OTP and returns JWT token",
-  })
-  @ApiBody({ type: VerifyOtpDto })
-  @ApiBadRequestResponse({ description: "Phone & OTP are required" })
-  @Post("verify-otp")
-  verifyOtp(@Body() body: VerifyOtpDto) {
-    const { phone, otp } = body;
-
-    if (!phone || !otp) {
-      throw new BadRequestException("Phone & OTP are required");
-    }
-
-    return this.authService.verifyOtp(phone, otp);
-  }
-
   // ---------------- EMAIL/PASSWORD LOGIN ----------------
   @ApiOperation({
     summary: "User login with email & password",
@@ -102,6 +70,21 @@ export class AuthController {
   @Post("login")
   login(@Body() body: LoginDto) {
     return this.authService.login(body.email, body.password);
+  }
+
+  // ---------------- CUSTOMER REGISTER ----------------
+  @ApiOperation({
+    summary: "Customer register with name, email & password",
+  })
+  @ApiBody({ type: RegisterDto })
+  @ApiBadRequestResponse({ description: "Email already registered / Invalid details" })
+  @Post("register")
+  register(@Body() body: RegisterDto) {
+    return this.authService.register({
+      name: body.name || body.fullName || "",
+      email: body.email,
+      password: body.password,
+    });
   }
 
   // ---------------- ADMIN LOGIN ----------------

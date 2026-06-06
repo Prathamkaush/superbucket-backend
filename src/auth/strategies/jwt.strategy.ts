@@ -10,17 +10,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      // CRITICAL: This must match the secret in AuthModule
       secretOrKey: process.env.JWT_SECRET || 'your-secret-key',
     });
   }
 
   async validate(payload: any) {
-    // Optional: Check if user still exists in DB (Extra Security)
-    // If you don't want to hit DB on every request, keep your original code.
-    // Here is your original lightweight validation:
+    console.log('🔍 JWT Payload:', payload); // Add this to debug
+    
+    // ✅ FIXED: Check both sub and id
     return {
-      id: payload.sub,
+      id: payload.sub || payload.id,  // ← CHANGED THIS
       phone: payload.phone,
       email: payload.email,
       role: payload.role,

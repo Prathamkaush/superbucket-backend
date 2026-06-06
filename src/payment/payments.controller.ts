@@ -20,6 +20,7 @@ import {
   ApiBadRequestResponse,
   ApiUnauthorizedResponse,
 } from "@nestjs/swagger";
+import { OrdersService } from "../orders/orders.service";
 
 @ApiTags("Payments")
 @ApiBearerAuth("JWT-auth")
@@ -27,7 +28,8 @@ import {
 export class PaymentsController {
   constructor(
     private readonly paymentsService: PaymentsService,
-    private readonly prisma: PrismaService
+    private readonly prisma: PrismaService,
+    private readonly ordersService: OrdersService,
   ) {}
 
   // ================= CREATE RAZORPAY ORDER =================
@@ -40,49 +42,27 @@ export class PaymentsController {
   @ApiBody({
     schema: {
       example: {
-        orderId: 123,
+        amount: 1000,
       },
     },
   })
   @ApiBadRequestResponse({
     description:
-      "orderId missing | Invalid order | Order already processed",
+      "Invalid amount",
   })
   @ApiUnauthorizedResponse({ description: "Unauthorized" })
   @UseGuards(JwtAuthGuard)
   @Post("razorpay/create-order")
-  async createRazorpayOrder(
-    @Req() req,
-    @Body() body: { orderId: number }
-  ) {
-    if (!body?.orderId) {
-      throw new BadRequestException("orderId is required");
+  async createRazorpayOrder(@Body() body: { amount: number }) {
+    if (!body?.amount || body.amount <= 0) {
+      throw new BadRequestException("Invalid amount");
     }
 
-    const order = await this.prisma.order.findUnique({
-      where: { id: body.orderId },
-    });
-
-    if (!order || order.userId !== req.user.id) {
-      throw new BadRequestException("Invalid order");
-    }
-
-    if (order.status !== OrderStatus.PENDING) {
-      throw new BadRequestException("Order already processed");
-    }
-
-    const razorpayOrder = await this.paymentsService.createOrder(
-      Number(order.totalAmount)
-    );
-
-    await this.prisma.order.update({
-      where: { id: order.id },
-      data: { razorpayOrderId: razorpayOrder.id },
-    });
+    const razorpayOrder = await this.paymentsService.createOrder(body.amount);
 
     return {
       razorpayOrderId: razorpayOrder.id,
-      amount: Number(order.totalAmount),
+      amount: razorpayOrder.amount, // already in paise
       key: process.env.RAZORPAY_KEY_ID,
     };
   }
@@ -100,6 +80,15 @@ export class PaymentsController {
         razorpay_order_id: "order_Nx123abc",
         razorpay_payment_id: "pay_Nx456xyz",
         razorpay_signature: "generated_signature_here",
+        address: {
+          name: "John Doe",
+          street: "123 Main St",
+          city: "Mumbai",
+          state: "Maharashtra",
+          pincode: "400001",
+          phone: "9876543210"
+        },
+        couponCode: "WELCOME10"
       },
     },
   })
@@ -109,95 +98,46 @@ export class PaymentsController {
   })
   @ApiUnauthorizedResponse({ description: "Unauthorized" })
   @UseGuards(JwtAuthGuard)
-  @Post("razorpay/verify")
-  async verifyPayment(@Req() req, @Body() body) {
-    const crypto = require("crypto");
-
-    const {
-      razorpay_order_id,
-      razorpay_payment_id,
-      razorpay_signature,
-    } = body;
-
-    const expected = crypto
-      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
-      .update(razorpay_order_id + "|" + razorpay_payment_id)
-      .digest("hex");
-
-    if (expected !== razorpay_signature) {
-      throw new BadRequestException("Invalid signature");
-    }
-
-    const order = await this.prisma.order.findUnique({
-      where: { razorpayOrderId: razorpay_order_id },
-    });
-
-    if (!order) {
-      throw new BadRequestException("Order not found");
-    }
-
-    if (order.userId !== req.user.id) {
-      throw new BadRequestException("Unauthorized payment verification");
-    }
-
-    if (order.status !== OrderStatus.PENDING) {
-      throw new BadRequestException("Order already processed");
-    }
-
-    await this.prisma.order.update({
-      where: { id: order.id },
-      data: {
-        status: OrderStatus.CONFIRMED,
-        paymentId: razorpay_payment_id,
-        paidAt: new Date(),
-      },
-    });
-
-    return { success: true, orderId: order.id };
-  }
-
-  // ================= PAYMENT FAILURE =================
-
-  @ApiOperation({
-    summary: "Handle Razorpay payment failure",
-    description:
-      "Marks payment as failed and allows retry for pending orders",
-  })
-  @ApiBody({
-    schema: {
-      example: {
-        orderId: 123,
-        reason: "Payment cancelled by user",
-      },
-    },
-  })
-  @ApiBadRequestResponse({
-    description:
-      "Invalid order | Unauthorized | Order already processed",
-  })
-  @ApiUnauthorizedResponse({ description: "Unauthorized" })
   @UseGuards(JwtAuthGuard)
-  @Post("razorpay/failure")
-  async paymentFailed(
-    @Req() req,
-    @Body() body: { orderId: number; reason?: string }
-  ) {
-    const order = await this.prisma.order.findUnique({
-      where: { id: body.orderId },
-    });
+@Post("razorpay/verify")
+async verifyPayment(@Req() req, @Body() body) {
+  const crypto = require("crypto");
 
-    if (!order || order.userId !== req.user.id) {
-      throw new BadRequestException("Invalid order");
-    }
+  const {
+    razorpay_order_id,
+    razorpay_payment_id,
+    razorpay_signature,
+    address,
+    couponCode,
+  } = body;
 
-    if (order.status !== OrderStatus.PENDING) {
-      throw new BadRequestException("Order already processed");
-    }
+  const expected = crypto
+    .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET!)
+    .update(razorpay_order_id + "|" + razorpay_payment_id)
+    .digest("hex");
 
-    // Optional: store failure reason later
-    return {
-      success: false,
-      message: "Payment failed. You can retry or contact support.",
-    };
+  if (expected !== razorpay_signature) {
+    throw new BadRequestException("Invalid signature");
   }
+
+  // ✅ Correct call
+  const order = await this.ordersService.createOrder(req.user.id, {
+    address,
+    paymentMethod: "RAZORPAY",
+    couponCode,
+  });
+
+  await this.prisma.order.update({
+    where: { id: order.orderId },
+    data: {
+      razorpayOrderId: razorpay_order_id,
+      paymentId: razorpay_payment_id,
+      paidAt: new Date(),
+      status: OrderStatus.CONFIRMED,
+    },
+  });
+
+  return { success: true, orderId: order.orderId };
+}
+
 }

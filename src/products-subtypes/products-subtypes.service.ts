@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateProductSubtypeDto } from './dto/create-product-subtype.dto';
 import { UpdateProductSubtypeDto } from './dto/update-product-subtype.dto';
@@ -18,10 +18,28 @@ export class ProductSubtypesService {
     });
   }
 
-  findAll(typeId?: number) {
+  async findAll(typeId?: number) {
     return this.prisma.productSubtype.findMany({
       where: typeId ? { typeId } : undefined,
-      orderBy: { id: 'asc' },
+
+      include: {
+        type: {
+          select: {
+            id: true,
+            name: true,
+            category: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+
+      orderBy: {
+        id: "asc",
+      },
     });
   }
 
@@ -50,10 +68,38 @@ export class ProductSubtypesService {
   }
 
   async remove(id: number) {
-    await this.findOne(id);
+    const subtype = await this.findOne(id);
+
+    // ✅ Check for associated Products
+    const productsCount = await this.prisma.product.count({
+      where: { subtypeId: id },
+    });
+
+    if (productsCount > 0) {
+      throw new BadRequestException(
+        `Cannot delete product subtype "${subtype.name}". It has ${productsCount} product(s) associated with it. Please delete or reassign all products first.`
+      );
+    }
 
     return this.prisma.productSubtype.delete({
       where: { id },
     });
   }
+  findAllWithType() {
+  return this.prisma.productSubtype.findMany({
+    select: {
+      id: true,
+      name: true,
+      type: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+    orderBy: {
+      name: "asc",
+    },
+  });
+}
 }

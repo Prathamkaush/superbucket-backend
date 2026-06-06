@@ -52,7 +52,9 @@ export class CartController {
       type: "object",
       properties: {
         productId: { type: "number", example: 19 },
+        variantId: { type: "number", example: 7, nullable: true },
         sizeId: { type: "number", example: 4, nullable: true },
+        quantity: { type: "number", example: 2, default: 1 },
       },
       required: ["productId"],
     },
@@ -64,12 +66,16 @@ export class CartController {
   add(
     @Req() req,
     @Body("productId") productId: number,
-    @Body("sizeId") sizeId?: number
+    @Body("variantId") variantId?: number,
+    @Body("sizeId") sizeId?: number,
+    @Body("quantity") quantity?: number
   ) {
     return this.cartService.addToCart(
       req.user.id,
       productId,
-      sizeId
+      variantId,
+      sizeId,
+      quantity
     );
   }
 

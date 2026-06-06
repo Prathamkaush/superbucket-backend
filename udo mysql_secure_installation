@@ -1,0 +1,23 @@
+[0;1;32m●[0m mariadb.service - MariaDB 10.6.22 database server
+     Loaded: loaded (/lib/systemd/system/mariadb.service; enabled; vendor preset: enabled)
+     Active: [0;1;32mactive (running)[0m since Fri 2025-12-19 05:34:08 UTC; 51s ago
+       Docs: man:mariadbd(8)
+             https://mariadb.com/kb/en/library/systemd/
+   Main PID: 48149 (mariadbd)
+     Status: "Taking your SQL requests now..."
+      Tasks: 12 (limit: 30674)
+     Memory: 61.3M
+        CPU: 555ms
+     CGroup: /system.slice/mariadb.service
+             └─48149 /usr/sbin/mariadbd
+
+Dec 19 05:34:08 ubuntu-s-2vcpu-4gb-blr1-01 mariadbd[48149]: 2025-12-19  5:34:08 0 [Note] Plugin 'FEEDBACK' is disabled.
+Dec 19 05:34:08 ubuntu-s-2vcpu-4gb-blr1-01 mariadbd[48149]: 2025-12-19  5:34:08 0 [Note] InnoDB: Loading buffer pool(s) from /var/lib/mysql/ib_buffer_pool
+Dec 19 05:34:08 ubuntu-s-2vcpu-4gb-blr1-01 mariadbd[48149]: 2025-12-19  5:34:08 0 [Warning] You need to use --log-bin to make --expire-logs-days or --binlog-expire-logs-seconds work.
+Dec 19 05:34:08 ubuntu-s-2vcpu-4gb-blr1-01 mariadbd[48149]: 2025-12-19  5:34:08 0 [Note] InnoDB: Buffer pool(s) load completed at 251219  5:34:08
+Dec 19 05:34:08 ubuntu-s-2vcpu-4gb-blr1-01 mariadbd[48149]: 2025-12-19  5:34:08 0 [Note] Server socket created on IP: '127.0.0.1'.
+Dec 19 05:34:08 ubuntu-s-2vcpu-4gb-blr1-01 mariadbd[48149]: 2025-12-19  5:34:08 0 [Note] /usr/sbin/mariadbd: ready for connections.
+Dec 19 05:34:08 ubuntu-s-2vcpu-4gb-blr1-01 mariadbd[48149]: Version: '10.6.22-MariaDB-0ubuntu0.22.04.1'  socket: '/run/mysqld/mysqld.sock'  port: 3306  Ubuntu 22.04
+Dec 19 05:34:08 ubuntu-s-2vcpu-4gb-blr1-01 systemd[1]: Started MariaDB 10.6.22 database server.
+Dec 19 05:34:08 ubuntu-s-2vcpu-4gb-blr1-01 /etc/mysql/debian-start[48164]: Upgrading MySQL tables if necessary.
+Dec 19 05:34:09 ubuntu-s-2vcpu-4gb-blr1-01 /etc/mysql/debian-start[48180]: Triggering myisam-recover for all MyISAM tables and aria-recover for all Aria tables

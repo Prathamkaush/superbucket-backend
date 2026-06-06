@@ -17,29 +17,49 @@ import { ContactModule } from './contact/contact.module';
 import { WishlistModule } from './wishlist/wishlist.module';
 import { ProductSizeModule } from './products-size/product-size.module';
 import { JwtModule } from "@nestjs/jwt";
+import { PassportModule } from '@nestjs/passport';
+import { DelhiveryModule } from './delivery/delhivery.module';
+import { ScheduleModule } from "@nestjs/schedule";
+import { DelhiveryWebhookModule } from './delivery/delhivery-webhook.module';
+import {CouponsModule} from "./coupons/coupons.module"
+import {AddressesModule} from "./addresses/addresses.module"
+import { HomepageModule } from './homepage/homepage.module';
+import { AttributesModule } from './attributes/attributes.module';
+import { VendorModule } from './vendor/vendor.module';
+
 
 @Module({
   imports: [
-     JwtModule.register({
+     PassportModule.register({ defaultStrategy: 'jwt' }), // ← ADD THIS
+    JwtModule.register({
       global: true,
       secret: process.env.JWT_SECRET,
       signOptions: { expiresIn: "7d" },
     }),
+    
     PrismaModule,
     OrdersModule,
     AuthModule,
     CartModule,
     UsersModule,
     AdminModule,
+    CouponsModule,
+    DelhiveryModule,
+    ScheduleModule.forRoot(),
     ReviewsModule,
     SettingsModule,
+    HomepageModule,
+    AddressesModule,
     FeedbackModule,
     ProductsModule,
+    AttributesModule,
     CategoriesModule,
     WishlistModule,
     ProductSizeModule,
     ProductsTypesModule,
     ProductsSubtypesModule,
+    DelhiveryWebhookModule,
+    VendorModule,
     ContactModule,
     PaymentsModule,
   ],

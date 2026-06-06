@@ -116,4 +116,10 @@ export class ProductSubtypesController {
   remove(@Param("id", ParseIntPipe) id: number) {
     return this.productSubtypesService.remove(id);
   }
+@UseGuards(JwtAuthGuard, AdminGuard)
+@Get("admin/all")
+findAllForAdmin() {
+  return this.productSubtypesService.findAllWithType();
 }
+}
+

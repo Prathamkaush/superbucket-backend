@@ -12,7 +12,7 @@ import {
 import { ReviewsService } from "./reviews.service";
 import { CreateReviewDto } from "./dto/create-review.dto";
 import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
-import { AdminGuard } from "src/auth/admin.guard";
+import { AdminGuard } from "../auth/admin.guard";
 
 // ✅ Swagger
 import {
@@ -75,6 +75,20 @@ export class ReviewsController {
   @Post()
   create(@Req() req: any, @Body() dto: CreateReviewDto) {
     return this.reviewsService.createReview(req.user.id, dto);
+  }
+
+  @ApiOperation({
+    summary: "Get latest public reviews",
+    description: "Returns the latest product ratings for storefront sections",
+  })
+  @ApiQuery({
+    name: "limit",
+    required: false,
+    type: Number,
+  })
+  @Get("latest")
+  getLatestReviews(@Query("limit") limit = "4") {
+    return this.reviewsService.getLatest(Number(limit));
   }
 
   /* ================= GET PRODUCT REVIEWS ================= */

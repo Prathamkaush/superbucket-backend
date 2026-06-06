@@ -22,6 +22,17 @@ enum UserRole {
   ADMIN
 }
 
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum VariantStatus {
+  ACTIVE
+  INACTIVE
+}
+
 model User {
   id           Int      @id @default(autoincrement())
   name         String?
@@ -40,19 +51,7 @@ model User {
   feedbacks Feedback[]
   contacts  Contact[]
   wishlists Wishlist[]
-}
-
-// -----------------------------------------
-//  OTP TABLE
-// -----------------------------------------
-model OtpCode {
-  id        Int      @id @default(autoincrement())
-  phone     String   @unique
-  otpCode   String
-  expiresAt DateTime
-  attempts  Int      @default(0)
-  tempData  Json?
-  createdAt DateTime @default(now())
+  addresses UserAddress[]
 }
 
 // -----------------------------------------
@@ -63,6 +62,7 @@ model OtpCode {
 model Category {
   id        Int      @id @default(autoincrement())
   name      String
+  image     String?
   createdAt DateTime @default(now())
 
   productTypes ProductType[]
@@ -98,36 +98,340 @@ model ProductSubtype {
 //  PRODUCT MODEL
 // -----------------------------------------
 model Product {
-  id          Int      @id @default(autoincrement())
-  title       String
-  slug        String?  @unique
-  description String?  @db.Text
-  price       Decimal  @db.Decimal(10, 2)
-  discountType  String?   // PERCENT | FLAT
-  discountValue Decimal?  @db.Decimal(10,2)
-  stock       Int
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                Int      @id @default(autoincrement())
+  title             String
+  slug              String?  @unique
+  description       String?  @db.Text
+  shortDescription  String?  @db.Text
+  price             Decimal  @db.Decimal(10, 2)
+  gstRate           Decimal  @default(0) @db.Decimal(5, 2)
+  estimatedShipping Int
+  discountType      String?
+  discountValue     Decimal? @db.Decimal(10, 2)
+  freeShipping      Boolean  @default(false)
+  isTrending        Boolean  @default(false)
+  isFeatured        Boolean  @default(false)
+  isBestSeller      Boolean  @default(false)
+  isNewLaunch       Boolean  @default(false)
+  isActive          Boolean  @default(true)
+  status            ProductStatus @default(ACTIVE)
+  stock             Int
+  weight            Decimal? @db.Decimal(6, 2)
+
+  // Supplement-specific PDP fields inspired by sports nutrition sites.
+  brandName             String?
+  productLine           String?
+  goal                  String?
+  dietaryPreference     String?
+  proteinType           String?
+  servingSize           String?
+  servingsPerContainer  Int?
+  proteinPerServing     Decimal? @db.Decimal(8, 2)
+  bcaaPerServing        Decimal? @db.Decimal(8, 2)
+  eaaPerServing         Decimal? @db.Decimal(8, 2)
+  caloriesPerServing    Decimal? @db.Decimal(8, 2)
+  proteinPercentage     Decimal? @db.Decimal(5, 2)
+  ingredients           String?  @db.Text
+  keyBenefits           Json?
+  howToUse              String?  @db.Text
+  whenToUse             String?  @db.Text
+  safetyInformation     String?  @db.Text
+  allergenInfo          String?  @db.Text
+  certifications        Json?
+  fssaiLicense          String?
+  countryOfOrigin       String?
+  marketedBy            String?  @db.Text
+  manufacturedBy        String?  @db.Text
+  sellerName            String?
+  authenticityNote      String?  @db.Text
+  returnPolicy          String?  @db.Text
+
+  metaTitle       String?
+  metaDescription String?
+  metaKeywords    String?
 
   img1 String?
   img2 String?
   img3 String?
   img4 String?
 
-  // Relations
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // ---------- FK ----------
   categoryId Int
   typeId     Int
   subtypeId  Int
+  seasonId   Int?
 
+  // ---------- BELONGS TO ----------
   category Category       @relation(fields: [categoryId], references: [id])
   type     ProductType    @relation(fields: [typeId], references: [id])
   subtype  ProductSubtype @relation(fields: [subtypeId], references: [id])
+  season   Season?        @relation(fields: [seasonId], references: [id])
+
+  // ---------- MANY TO MANY (JOIN TABLES) ----------
+  productColors    ProductColor[]
+  productFabrics   ProductFabric[]
+  productOccasions ProductOccasion[]
+  productFits      ProductFit[]
+  productSleeves   ProductSleeve[]
+  productPatterns  ProductPattern[]
+  productVendors   ProductVendor[]
+
+  // ---------- OTHERS ----------
+  variants        ProductVariant[]
+  nutritionFacts  NutritionFact[]
+  sizes           ProductSize[]
+  influencerItems InfluencerItem[]
+  cartItems       CartItem[]
+  orderItems      OrderItem[]
+  reviews         Review[]
+  wishlists       Wishlist[]
+}
+
+// -----------------------------------------
+//  Supplement product variants
+//  Examples: Rich Milk Chocolate / 1 kg / 30 servings.
+// -----------------------------------------
+model ProductVariant {
+  id        Int           @id @default(autoincrement())
+  productId Int
+  product   Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  sku       String?       @unique
+  flavour   String?
+  weightLabel String?
+  netQuantity String?
+  servings  Int?
+  mrp       Decimal?      @db.Decimal(10, 2)
+  price     Decimal       @db.Decimal(10, 2)
+  discountType  String?
+  discountValue Decimal?  @db.Decimal(10, 2)
+  stock     Int
+  weightKg  Decimal?      @db.Decimal(6, 2)
+  image1    String?
+  image2    String?
+  image3    String?
+  image4    String?
+  status    VariantStatus @default(ACTIVE)
+  isDefault Boolean       @default(false)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
 
   cartItems  CartItem[]
   orderItems OrderItem[]
-  reviews    Review[]
-  sizes ProductSize[]
-  wishlists Wishlist[]
+  wishlists  Wishlist[]
+
+  @@index([productId])
+  @@index([flavour])
+  @@index([weightLabel])
+}
+
+// -----------------------------------------
+//  Nutrition facts table
+//  Examples: Protein 25g, BCAA 5.5g, Energy 110 kcal.
+// -----------------------------------------
+model NutritionFact {
+  id        Int      @id @default(autoincrement())
+  productId Int
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  name      String
+  amount    String
+  unit      String?
+  per       String?  @default("serving")
+  position  Int      @default(0)
+
+  @@index([productId])
+}
+
+// -----------------------------------------
+//  Product Details
+// -----------------------------------------
+model Color {
+  id   Int     @id @default(autoincrement())
+  name String
+  hex  String? // #FFFFFF
+  slug String  @unique
+
+  products ProductColor[]
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model Fabric {
+  id   Int    @id @default(autoincrement())
+  name String
+  slug String @unique
+
+  products ProductFabric[]
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model Occasion {
+  id   Int    @id @default(autoincrement())
+  name String
+  slug String @unique
+
+  products ProductOccasion[]
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model Season {
+  id       Int     @id @default(autoincrement())
+  name     String // Summer, Winter, Festive
+  slug     String  @unique
+  isActive Boolean @default(true)
+
+  products Product[]
+
+  createdAt DateTime @default(now())
+}
+
+model Fit {
+  id   Int    @id @default(autoincrement())
+  name String
+  slug String @unique
+
+  products ProductFit[]
+
+  isActive Boolean @default(true)
+}
+
+model Sleeve {
+  id   Int    @id @default(autoincrement())
+  name String
+  slug String @unique
+
+  products ProductSleeve[]
+
+  isActive Boolean @default(true)
+}
+
+model Pattern {
+  id   Int    @id @default(autoincrement())
+  name String
+  slug String @unique
+
+  products ProductPattern[]
+
+  isActive Boolean @default(true)
+}
+
+model ProductColor {
+  productId Int
+  colorId   Int
+
+  product Product @relation(fields: [productId], references: [id])
+  color   Color   @relation(fields: [colorId], references: [id])
+
+  @@id([productId, colorId])
+  @@index([colorId])
+}
+
+model ProductFabric {
+  productId Int
+  fabricId  Int
+
+  product Product @relation(fields: [productId], references: [id])
+  fabric  Fabric  @relation(fields: [fabricId], references: [id])
+
+  @@id([productId, fabricId])
+}
+
+model ProductOccasion {
+  productId  Int
+  occasionId Int
+
+  product  Product  @relation(fields: [productId], references: [id])
+  occasion Occasion @relation(fields: [occasionId], references: [id])
+
+  @@id([productId, occasionId])
+}
+
+model ProductFit {
+  productId Int
+  fitId     Int
+
+  product Product @relation(fields: [productId], references: [id])
+  fit     Fit     @relation(fields: [fitId], references: [id])
+
+  @@id([productId, fitId])
+}
+
+model ProductSleeve {
+  productId Int
+  sleeveId  Int
+
+  product Product @relation(fields: [productId], references: [id])
+  sleeve  Sleeve  @relation(fields: [sleeveId], references: [id])
+
+  @@id([productId, sleeveId])
+}
+
+model ProductPattern {
+  productId Int
+  patternId Int
+
+  product Product @relation(fields: [productId], references: [id])
+  pattern Pattern @relation(fields: [patternId], references: [id])
+
+  @@id([productId, patternId])
+}
+
+// -----------------------------------------
+//  VENDOR MODELS
+// -----------------------------------------
+
+enum VendorType {
+  MANUFACTURER
+  WHOLESALER
+  RETAILER
+  DISTRIBUTOR
+}
+
+model Vendor {
+  id                Int      @id @default(autoincrement())
+  companyName       String
+  contactPersonName String
+  contactNumber     String
+  emailId           String   @unique
+  gstNumber         String?
+  address           String
+  vendorType        VendorType
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  productVendors ProductVendor[]
+
+  @@index([vendorType])
+  @@index([emailId])
+}
+
+model ProductVendor {
+  id            Int      @id @default(autoincrement())
+  productId     Int
+  vendorId      Int
+  
+  costPrice     Decimal  @db.Decimal(10, 2) // what you bought it for
+  fabricType    String?  // optional: specific fabric for this vendor
+  quantity      Int      @default(1) // how many units from this vendor
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  vendor  Vendor  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, vendorId])
+  @@index([vendorId])
 }
 
 // -----------------------------------------
@@ -140,26 +444,51 @@ model CartItem {
 
   userId    Int
   productId Int
+  variantId Int?
   sizeId    Int?
+  price     Int
+  gstRate   Decimal @default(0) @db.Decimal(5, 2)
+  gstAmount Decimal @default(0) @db.Decimal(10, 2)
 
-  user    User    @relation(fields: [userId], references: [id])
-  product Product @relation(fields: [productId], references: [id])
-  size    ProductSize? @relation(fields: [sizeId], references: [id])
+  weight Float @default(0)
+
+  user    User            @relation(fields: [userId], references: [id])
+  product Product         @relation(fields: [productId], references: [id])
+  variant ProductVariant? @relation(fields: [variantId], references: [id])
+  size    ProductSize?    @relation(fields: [sizeId], references: [id])
 }
 
 // -----------------------------------------
 //  ORDERS & ORDER ITEMS
 // -----------------------------------------
 model Order {
-  id              Int         @id @default(autoincrement())
-  totalAmount     Decimal     @db.Decimal(10, 2)
-  status          OrderStatus @default(PENDING)
+  id Int @id @default(autoincrement())
+
+  totalAmount    Decimal @db.Decimal(10, 2) // items total
+  totalGst       Decimal @default(0) @db.Decimal(10, 2)
+  shippingCharge Decimal @db.Decimal(10, 2) // NEW
+  finalAmount    Decimal @db.Decimal(10, 2) // NEW
+
+  totalWeight      Decimal?  @db.Decimal(6, 2) // NEW (KG)
+  courier          String? // DELHIVERY
+  trackingId       String?
+  confirmedAt      DateTime?
+  shippedAt        DateTime?
+  deliveredAt      DateTime?
+  shippingResponse Json?
+
+  couponCode     String?
+  couponDiscount Decimal? @db.Decimal(10, 2)
+
   paymentMethod   String? // COD | RAZORPAY
   paymentId       String?
-  razorpayOrderId String?     @unique
+  razorpayOrderId String?   @unique
   paidAt          DateTime?
-  address         Json
-  createdAt       DateTime    @default(now())
+
+  status    OrderStatus @default(PENDING)
+  address   Json
+  addressId Int?
+  createdAt DateTime    @default(now())
 
   userId Int
   user   User @relation(fields: [userId], references: [id])
@@ -175,14 +504,23 @@ model OrderItem {
   createdAt DateTime @default(now())
 
   // SNAPSHOT FIELDS
-  price          Decimal  @db.Decimal(10, 2) // final price per unit
-  originalPrice  Decimal? @db.Decimal(10, 2)
-  discountType   String?  // PERCENT | FLAT
-  discountValue  Decimal? @db.Decimal(10, 2)
+  price         Decimal  @db.Decimal(10, 2) // final price per unit
+  originalPrice Decimal? @db.Decimal(10, 2)
+  discountType  String? // PERCENT | FLAT
+  discountValue Decimal? @db.Decimal(10, 2)
+  gstRate       Decimal  @default(0) @db.Decimal(5, 2)
+  gstAmount     Decimal  @default(0) @db.Decimal(10, 2)
 
   // SIZE SNAPSHOT
   sizeId Int?
   size   ProductSize? @relation(fields: [sizeId], references: [id])
+
+  // SUPPLEMENT VARIANT SNAPSHOT
+  variantId    Int?
+  variant      ProductVariant? @relation(fields: [variantId], references: [id])
+  flavour      String?
+  weightLabel  String?
+  sku          String?
 
   // RELATIONS
   orderId   Int
@@ -229,14 +567,14 @@ model Review {
   comment   String?
   userId    Int
   productId Int
-  orderId   Int
+  orderId   Int?
   createdAt DateTime @default(now())
 
   user    User    @relation(fields: [userId], references: [id])
   product Product @relation(fields: [productId], references: [id])
-  order   Order   @relation(fields: [orderId], references: [id])
+  order   Order?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
-  @@unique([userId, productId, orderId])
+  @@unique([userId, productId])
 }
 
 // -----------------------------------------
@@ -291,18 +629,18 @@ model Contact {
 //  Product sizes
 // -----------------------------------------
 model ProductSize {
-  id        Int      @id @default(autoincrement())
-  size      String   // S, M, L, XL
-  stock     Int
-  price     Decimal? @db.Decimal(10,2) // optional per-size pricing
+  id    Int      @id @default(autoincrement())
+  size  String // S, M, L, XL
+  stock Int
+  price Decimal? @db.Decimal(10, 2) // optional per-size pricing
 
-  productId Int
-  product   Product  @relation(fields: [productId], references: [id])
+  productId  Int
+  product    Product     @relation(fields: [productId], references: [id])
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+  wishlists  Wishlist[]
 
   @@unique([productId, size])
-  cartItems CartItem[]
-  orderItems OrderItem[]
-  wishlists Wishlist[]
 }
 
 // -----------------------------------------
@@ -314,12 +652,149 @@ model Wishlist {
 
   userId    Int
   productId Int
+  variantId Int?
   sizeId    Int?
 
-  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  product Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
-  size    ProductSize? @relation(fields: [sizeId], references: [id])
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant ProductVariant? @relation(fields: [variantId], references: [id])
+  size    ProductSize?    @relation(fields: [sizeId], references: [id])
 
-  @@unique([userId, productId, sizeId])
+  @@unique([userId, productId, variantId, sizeId])
 }
 
+// -----------------------------------------
+//  USERS ADDRESS
+// -----------------------------------------
+model UserAddress {
+  id     Int @id @default(autoincrement())
+  userId Int
+
+  name    String
+  phone   String
+  street  String
+  city    String
+  state   String
+  pincode String
+
+  isDefault Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// -----------------------------------------
+//  Coupon
+// -----------------------------------------
+model Coupon {
+  id Int @id @default(autoincrement())
+
+  code  String     @unique // e.g. FIRST10
+  type  CouponType // PERCENT | FLAT
+  value Decimal    @db.Decimal(10, 2) // 10% or ₹200
+
+  minOrderValue Decimal? @db.Decimal(10, 2) // optional
+  maxDiscount   Decimal? @db.Decimal(10, 2) // cap for percent coupons
+
+  usageLimit Int? // total allowed uses
+  usedCount  Int  @default(0)
+
+  expiresAt DateTime?
+  isActive  Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+}
+
+enum CouponType {
+  PERCENT
+  FLAT
+}
+
+// -----------------------------------------
+//  INFLUENCER
+// -----------------------------------------
+model InfluencerItem {
+  id Int @id @default(autoincrement())
+
+  homepageSectionId Int
+  homepageSection   HomepageSection @relation(fields: [homepageSectionId], references: [id])
+
+  // 🔥 MEDIA MODE
+  mediaType MediaSourceType @default(UPLOAD)
+
+  // Upload-based media
+  mediaId Int?
+  media   Media? @relation(fields: [mediaId], references: [id])
+
+  // Instagram / external embed
+  embedUrl String? @db.Text
+
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
+
+  influencerName String?
+  ctaText        String? @default("Shop Now")
+
+  position Int
+  createdAt DateTime @default(now())
+
+  @@index([homepageSectionId])
+  @@index([productId])
+}
+
+enum MediaSourceType {
+  UPLOAD
+  INSTAGRAM
+}
+
+// -----------------------------------------
+//  HomePageSection
+// -----------------------------------------
+model HomepageSection {
+  id       Int             @id @default(autoincrement())
+  type     HomeSectionType
+  title    String?
+  config   Json // 🔥 Component-specific data
+  position Int // ordering on homepage
+  isActive Boolean         @default(true)
+
+  influencerItems InfluencerItem[]
+  createdAt       DateTime         @default(now())
+
+  updatedAt DateTime @updatedAt
+
+  @@index([type])
+  @@index([position])
+}
+
+enum HomeSectionType {
+  HERO
+  CATEGORY_STRIP
+  INFLUENCER
+  EDITORIAL
+}
+
+// -----------------------------------------
+//  Media
+// -----------------------------------------
+model Media {
+  id        Int       @id @default(autoincrement())
+  type      MediaType
+  url       String
+  mimeType  String?
+  size      Int?
+  createdAt DateTime  @default(now())
+
+  influencerItems InfluencerItem[]
+
+  @@index([type])
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}

@@ -13,6 +13,9 @@ import {
 import { ContactService } from "./contact.service";
 import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
 import { AdminGuard } from "../auth/admin.guard";
+import { Patch } from "@nestjs/common";
+import { UpdateContactStatusDto } from "./dto/update-contact-status.dto";
+import { ContactStatus , ContactReason } from "@prisma/client";
 
 // ✅ Swagger imports
 import {
@@ -78,15 +81,23 @@ export class ContactController {
   @ApiForbiddenResponse({ description: "Admin access required" })
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Get()
-  getAll(
-    @Query("page") page = "1",
-    @Query("limit") limit = "10"
-  ) {
-    return this.contactService.getAllContacts(
-      Number(page),
-      Number(limit)
-    );
-  }
+@UseGuards(JwtAuthGuard, AdminGuard)
+getAll(
+  @Query("page") page = "1",
+  @Query("limit") limit = "10",
+  @Query("status") status?: ContactStatus,
+  @Query("reason") reason?: ContactReason,
+  @Query("search") search?: string,
+) {
+  return this.contactService.getAllContacts({
+    page: Number(page),
+    limit: Number(limit),
+    status,
+    reason,
+    search,
+  });
+}
+
 
   // -------- ADMIN: VIEW SINGLE --------
   @ApiOperation({
@@ -123,4 +134,38 @@ export class ContactController {
   remove(@Param("id", ParseIntPipe) id: number) {
     return this.contactService.delete(id);
   }
+  // -------- ADMIN: Status Change --------
+  @ApiOperation({
+  summary: "Update contact status (Admin only)",
+})
+@ApiBearerAuth("JWT-auth")
+@ApiParam({
+  name: "id",
+  description: "Contact message ID",
+  example: 12,
+})
+@ApiBody({
+  schema: {
+    type: "object",
+    properties: {
+      status: {
+        type: "string",
+        enum: ["NEW", "IN_PROGRESS", "RESOLVED"],
+        example: "IN_PROGRESS",
+      },
+    },
+    required: ["status"],
+  },
+})
+@ApiUnauthorizedResponse({ description: "Unauthorized" })
+@ApiForbiddenResponse({ description: "Admin access required" })
+@UseGuards(JwtAuthGuard, AdminGuard)
+@Patch(":id/status")
+updateStatus(
+  @Param("id", ParseIntPipe) id: number,
+  @Body() body: UpdateContactStatusDto
+) {
+  return this.contactService.updateStatus(id, body.status);
+}
+
 }

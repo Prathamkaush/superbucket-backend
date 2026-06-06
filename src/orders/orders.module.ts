@@ -5,6 +5,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { JwtAuthGuard } from '../auth/strategies/jwt-auth.guard';
 import { JwtStrategy } from '../auth/strategies/jwt.strategy';
 import { JwtModule } from '@nestjs/jwt';
+import { CouponsModule } from "../coupons/coupons.module";
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { JwtModule } from '@nestjs/jwt';
       secret: process.env.JWT_SECRET || 'your-secret-key',
       signOptions: { expiresIn: '30d' },
     }),
+    CouponsModule,
   ],
   controllers: [OrdersController],
   providers: [

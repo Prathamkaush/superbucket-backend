@@ -14,7 +14,8 @@ import {
 import { OrdersService } from "./orders.service";
 import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
 import { UpdateOrderStatusDto } from "./dto/update-order-status.dto";
-import { AdminGuard } from "src/auth/admin.guard";
+import {PreviewOrderDto} from "./dto/preview-order.dto"
+import { AdminGuard } from "../auth/admin.guard";
 
 // ✅ Swagger imports
 import {
@@ -151,24 +152,48 @@ export class OrdersController {
           pincode: "110001",
           phone: "9999999999",
         },
+        paymentMethod: "COD",
+        couponCode: "WELCOME10"
       },
     },
   })
   @ApiUnauthorizedResponse({ description: "Unauthorized" })
-  @ApiBadRequestResponse({ description: "Address is required" })
+  @ApiBadRequestResponse({ description: "Invalid request" })
   @UseGuards(JwtAuthGuard)
-  @Post()
-  placeOrder(@Req() req: any, @Body() body: { address: any }) {
-    if (!req.user?.id) {
-      throw new UnauthorizedException("User not authenticated");
-    }
-
-    if (!body?.address) {
-      throw new BadRequestException("Address is required");
-    }
-
-    return this.ordersService.createOrder(req.user.id, body.address);
+@Post()
+placeOrder(
+  @Req() req: any,
+  @Body()
+  body: {
+    address?: any;
+    addressId?: number;
+    paymentMethod: "COD" | "RAZORPAY";
+    couponCode?: string;
   }
+) {
+  if (!req.user?.id) {
+    throw new UnauthorizedException("User not authenticated");
+  }
+
+  if (!body.address && !body.addressId) {
+    throw new BadRequestException("Address or addressId is required");
+  }
+
+  if (!["COD", "RAZORPAY"].includes(body.paymentMethod)) {
+    throw new BadRequestException("Invalid payment method");
+  }
+
+  return this.ordersService.createOrder(
+    req.user.id,
+    {
+      address: body.address,
+      addressId: body.addressId,
+      paymentMethod: body.paymentMethod,
+      couponCode: body.couponCode,
+    }
+  );
+}
+
 
   @ApiOperation({
     summary: "Cancel order",
@@ -207,4 +232,36 @@ export class OrdersController {
 
     return this.ordersService.reorder(orderId, req.user.id);
   }
+
+  @UseGuards(JwtAuthGuard)
+@Post("preview")
+previewOrder(
+  @Req() req: any,
+  @Body()
+  body: {
+    address?: any;
+    addressId?: number;
+    paymentMethod: "COD" | "RAZORPAY";
+    couponCode?: string;
+  }
+) {
+  if (!body.address && !body.addressId) {
+    throw new BadRequestException("Address or addressId is required");
+  }
+
+  if (!body.paymentMethod) {
+    throw new BadRequestException("Payment method is required");
+  }
+
+  return this.ordersService.previewOrder(
+    req.user.id,
+    {
+      address: body.address,
+      addressId: body.addressId,
+    },
+    body.paymentMethod,
+    body.couponCode
+  );
+}
+
 }

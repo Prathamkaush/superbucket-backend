@@ -10,7 +10,7 @@ import {
 import { FeedbackService } from "./feedback.service";
 import { CreateFeedbackDto } from "./dto/create-feedback.dto";
 import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
-import { AdminGuard } from "src/auth/admin.guard";
+import { AdminGuard } from "../auth/admin.guard";
 
 // ✅ Swagger imports
 import {

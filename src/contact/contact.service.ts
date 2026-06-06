@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException  } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { ContactReason } from "@prisma/client";
+import { ContactReason , ContactStatus } from "@prisma/client";
 
 @Injectable()
 export class ContactService {
@@ -13,14 +13,20 @@ async createContact(input: {
   subject?: string;
   message: string;
   reason?: ContactReason;
+  page?: string;
   userId?: number | null;
   orderId?: number | null;
 }) {
-  const { userId, orderId, ...rest } = input;
+  const { userId, orderId, page, name, email, phone, subject, message, reason } = input;
 
   return this.prisma.contact.create({
     data: {
-      ...rest,
+      name,
+      email,
+      phone,
+      subject,
+      message,
+      reason,
 
       ...(userId
         ? { user: { connect: { id: userId } } }
@@ -32,29 +38,70 @@ async createContact(input: {
     },
   });
 }
-  async getAllContacts(page = 1, limit = 10) {
-    const skip = (page - 1) * limit;
+ async getAllContacts(params: {
+  page?: number;
+  limit?: number;
+  status?: ContactStatus;
+  reason?: ContactReason;
+  search?: string;
+}) {
+  const {
+    page = 1,
+    limit = 10,
+    status,
+    reason,
+    search,
+  } = params;
 
-    const [items, total] = await Promise.all([
-      this.prisma.contact.findMany({
-        skip,
-        take: limit,
-        orderBy: { createdAt: "desc" },
-        include: {
-          user: true,
-          order: true,
-        },
-      }),
-      this.prisma.contact.count(),
-    ]);
+  const skip = (page - 1) * limit;
 
-    return {
-      items,
+  const where: any = {};
+
+  // 🔹 Status filter
+  if (status) {
+    where.status = status;
+  }
+
+  // 🔹 Reason filter
+  if (reason) {
+    where.reason = reason;
+  }
+
+  // 🔹 Search filter (name, email, phone, subject)
+  if (search) {
+    where.OR = [
+      { name: { contains: search } },
+      { email: { contains: search } },
+      { phone: { contains: search} },
+      { subject: { contains: search} },
+    ];
+  }
+
+  const [items, total] = await Promise.all([
+    this.prisma.contact.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: { createdAt: "desc" },
+      include: {
+        user: true,
+        order: true,
+      },
+    }),
+    this.prisma.contact.count({ where }),
+  ]);
+
+  return {
+    items,
+    meta: {
       total,
       page,
+      limit,
       pages: Math.ceil(total / limit),
-    };
-  }
+    },
+  };
+}
+
 
   async getById(id: number) {
     const contact = await this.prisma.contact.findUnique({
@@ -74,4 +121,19 @@ async createContact(input: {
       where: { id },
     });
   }
+  async updateStatus(id: number, status: ContactStatus) {
+  const contact = await this.prisma.contact.findUnique({
+    where: { id },
+  });
+
+  if (!contact) {
+    throw new NotFoundException("Contact not found");
+  }
+
+  return this.prisma.contact.update({
+    where: { id },
+    data: { status },
+  });
+}
+
 }

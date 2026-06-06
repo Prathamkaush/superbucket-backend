@@ -8,7 +8,13 @@ import {
   Delete,
   ParseIntPipe,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { diskStorage } from "multer";
+import { extname, join } from "path";
+import { mkdirSync } from "fs";
 import { CategoriesService } from "./categories.service";
 import { CreateCategoryDto } from "./dto/create-category.dto";
 import { UpdateCategoryDto } from "./dto/update-category.dto";
@@ -22,6 +28,7 @@ import {
   ApiOperation,
   ApiParam,
   ApiBody,
+  ApiConsumes,
   ApiUnauthorizedResponse,
   ApiForbiddenResponse,
   ApiBadRequestResponse,
@@ -32,18 +39,32 @@ import {
 export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
+  private static imageStorage = diskStorage({
+    destination: (_req, _file, cb) => {
+      const uploadPath = join(process.cwd(), "uploads", "categories");
+      mkdirSync(uploadPath, { recursive: true });
+      cb(null, uploadPath);
+    },
+    filename: (_req, file, cb) => {
+      const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
+      cb(null, unique + extname(file.originalname));
+    },
+  });
+
   // ---------------- CREATE CATEGORY (ADMIN) ----------------
   @ApiOperation({
     summary: "Create a category (Admin only)",
   })
   @ApiBearerAuth("JWT-auth")
+  @ApiConsumes("multipart/form-data")
   @ApiBody({ type: CreateCategoryDto })
   @ApiUnauthorizedResponse({ description: "Unauthorized" })
   @ApiForbiddenResponse({ description: "Admin access required" })
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseInterceptors(FileInterceptor("image", { storage: CategoriesController.imageStorage }))
   @Post()
-  create(@Body() dto: CreateCategoryDto) {
-    return this.categoriesService.create(dto);
+  create(@Body() dto: CreateCategoryDto, @UploadedFile() image?: Express.Multer.File) {
+    return this.categoriesService.create(dto, image?.filename);
   }
 
   // ---------------- GET ALL CATEGORIES ----------------
@@ -75,6 +96,7 @@ export class CategoriesController {
     summary: "Update category (Admin only)",
   })
   @ApiBearerAuth("JWT-auth")
+  @ApiConsumes("multipart/form-data")
   @ApiParam({
     name: "id",
     description: "Category ID",
@@ -84,12 +106,17 @@ export class CategoriesController {
   @ApiUnauthorizedResponse({ description: "Unauthorized" })
   @ApiForbiddenResponse({ description: "Admin access required" })
   @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseInterceptors(FileInterceptor("image", { storage: CategoriesController.imageStorage }))
   @Patch(":id")
   update(
     @Param("id", ParseIntPipe) id: number,
-    @Body() dto: UpdateCategoryDto
+    @Body() dto: UpdateCategoryDto,
+    @UploadedFile() image?: Express.Multer.File
   ) {
-    return this.categoriesService.update(id, dto);
+    return this.categoriesService.update(id, {
+      ...dto,
+      ...(image ? { image: image.filename } : {}),
+    });
   }
 
   // ---------------- DELETE CATEGORY (ADMIN) ----------------

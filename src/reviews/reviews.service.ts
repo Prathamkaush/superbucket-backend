@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  NotFoundException,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateReviewDto } from "./dto/create-review.dto";
@@ -10,37 +11,46 @@ import { CreateReviewDto } from "./dto/create-review.dto";
 export class ReviewsService {
   constructor(private prisma: PrismaService) {}
 
-  /* -------- CREATE REVIEW -------- */
   async createReview(userId: number, dto: CreateReviewDto) {
-    // 1️⃣ Validate order
-    const order = await this.prisma.order.findFirst({
+    const product = await this.prisma.product.findFirst({
       where: {
-        id: dto.orderId,
-        userId,
-        status: "DELIVERED",
+        id: dto.productId,
+        isActive: true,
       },
-      include: { items: true },
+      select: { id: true },
     });
 
-    if (!order) {
-      throw new ForbiddenException("Order not eligible for review");
+    if (!product) {
+      throw new NotFoundException("Product not found");
     }
 
-    // 2️⃣ Validate product exists in order
-    const hasProduct = order.items.some(
-      (item) => item.productId === dto.productId
-    );
+    let orderId: number | null = null;
 
-    if (!hasProduct) {
-      throw new ForbiddenException("Product not in this order");
+    if (dto.orderId) {
+      const order = await this.prisma.order.findFirst({
+        where: {
+          id: dto.orderId,
+          userId,
+          items: {
+            some: {
+              productId: dto.productId,
+            },
+          },
+        },
+        select: { id: true },
+      });
+
+      if (!order) {
+        throw new ForbiddenException("Product not in this order");
+      }
+
+      orderId = order.id;
     }
 
-    // 3️⃣ Prevent duplicate review
     const exists = await this.prisma.review.findFirst({
       where: {
         userId,
         productId: dto.productId,
-        orderId: dto.orderId,
       },
     });
 
@@ -48,20 +58,17 @@ export class ReviewsService {
       throw new BadRequestException("Review already submitted");
     }
 
-    // 4️⃣ Create review
     return this.prisma.review.create({
-  data: {
-    rating: dto.rating,
-    comment: dto.comment,
-    user: { connect: { id: userId } },
-    product: { connect: { id: dto.productId } },
-    order: { connect: { id: dto.orderId } },
-  },
-});
-
+      data: {
+        rating: dto.rating,
+        comment: dto.comment,
+        user: { connect: { id: userId } },
+        product: { connect: { id: dto.productId } },
+        ...(orderId ? { order: { connect: { id: orderId } } } : {}),
+      },
+    });
   }
 
-  /* -------- GET PRODUCT REVIEWS -------- */
   async getProductReviews(productId: number) {
     const reviews = await this.prisma.review.findMany({
       where: { productId },
@@ -72,7 +79,7 @@ export class ReviewsService {
     });
 
     const avg =
-      reviews.reduce((sum, r) => sum + r.rating, 0) /
+      reviews.reduce((sum, review) => sum + review.rating, 0) /
       (reviews.length || 1);
 
     return {
@@ -81,27 +88,9 @@ export class ReviewsService {
       reviews,
     };
   }
-getAll() {
-  return this.prisma.review.findMany({
-    orderBy: { createdAt: "desc" },
-    include: {
-      user: {
-        select: { name: true, email: true },
-      },
-      product: {
-        select: { id: true, title: true },
-      },
-    },
-  });
-}
 
-async getAllPaginated(page = 1, limit = 5) {
-  const skip = (page - 1) * limit;
-
-  const [reviews, total] = await Promise.all([
-    this.prisma.review.findMany({
-      skip,
-      take: limit,
+  getAll() {
+    return this.prisma.review.findMany({
       orderBy: { createdAt: "desc" },
       include: {
         user: {
@@ -111,18 +100,50 @@ async getAllPaginated(page = 1, limit = 5) {
           select: { id: true, title: true },
         },
       },
-    }),
-    this.prisma.review.count(),
-  ]);
+    });
+  }
 
-  return {
-    data: reviews,
-    page,
-    limit,
-    total,
-    pages: Math.ceil(total / limit),
-  };
-}
+  getLatest(limit = 4) {
+    return this.prisma.review.findMany({
+      take: Math.min(Math.max(Number(limit) || 4, 1), 12),
+      orderBy: { createdAt: "desc" },
+      include: {
+        user: {
+          select: { name: true },
+        },
+        product: {
+          select: { id: true, title: true, slug: true, img1: true },
+        },
+      },
+    });
+  }
 
+  async getAllPaginated(page = 1, limit = 5) {
+    const skip = (page - 1) * limit;
 
+    const [reviews, total] = await Promise.all([
+      this.prisma.review.findMany({
+        skip,
+        take: limit,
+        orderBy: { createdAt: "desc" },
+        include: {
+          user: {
+            select: { name: true, email: true },
+          },
+          product: {
+            select: { id: true, title: true },
+          },
+        },
+      }),
+      this.prisma.review.count(),
+    ]);
+
+    return {
+      data: reviews,
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+    };
+  }
 }

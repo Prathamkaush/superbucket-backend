@@ -1,11 +1,12 @@
 import { Injectable, BadRequestException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { calculateFinalPrice } from "../utils/pricing";
 
 @Injectable()
 export class WishlistService {
   constructor(private prisma: PrismaService) {}
 
-  async toggleWishlist(userId: number, productId: number) {
+  async toggleWishlist(userId: number, productId: number, variantId?: number) {
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
     });
@@ -18,6 +19,7 @@ export class WishlistService {
       where: {
         userId,
         productId,
+        variantId: variantId ?? null,
       },
     });
 
@@ -34,36 +36,82 @@ export class WishlistService {
       data: {
         userId,
         productId,
+        variantId: variantId ?? null,
       },
     });
 
     return { wished: true };
   }
 
-  async isWishlisted(userId: number, productId: number) {
+  async isWishlisted(userId: number, productId: number, variantId?: number) {
     const exists = await this.prisma.wishlist.findFirst({
-      where: { userId, productId },
+      where: { userId, productId, variantId: variantId ?? null },
     });
 
     return {
       wished: !!exists,
       productId,
+      variantId: variantId ?? null,
     };
   }
 
   async getUserWishlist(userId: number) {
-    return this.prisma.wishlist.findMany({
-      where: { userId },
-      include: {
-        product: {
-          include: {
-            category: true,
-            type: true,
-            subtype: true,
-          },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    });
-  }
+const items = await this.prisma.wishlist.findMany({
+where: { userId },
+orderBy: { createdAt: "desc" },
+include: {
+product: {
+select: {
+id: true,
+title: true,
+slug: true,
+img1: true,
+price: true,
+discountType: true,
+discountValue: true,
+stock: true,
+},
+},
+variant: {
+select: {
+id: true,
+sku: true,
+flavour: true,
+weightLabel: true,
+price: true,
+discountType: true,
+discountValue: true,
+stock: true,
+image1: true,
+},
+},
+size: {
+select: {
+id: true,
+size: true,
+stock: true,
+},
+},
+},
+});
+
+return items.map((item) => {
+const finalPrice = calculateFinalPrice(
+item.product.price,
+item.product.discountType,
+item.product.discountValue
+);
+
+return {
+...item,
+product: {
+...item.product,
+finalPrice, // 🔥 COMPUTED, NOT STORED
+},
+};
+});
 }
+
+}
+
+

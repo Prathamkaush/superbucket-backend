@@ -12,6 +12,10 @@ export class CreateProductDto {
   @IsNumber()
   price: number;
 
+  @IsOptional()
+  @IsNumber()
+  gstRate?: number;
+
   @IsNumber()
   stock: number;
 
