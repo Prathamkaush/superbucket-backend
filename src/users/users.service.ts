@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { UpdateProfileDto } from "./dto/update-profile.dto";
 
 @Injectable()
 export class UsersService {
@@ -18,6 +19,7 @@ export class UsersService {
         name: true,
         email: true,
         phone: true,
+        profileImage: true,
         role: true,
         isVerified: true,
         createdAt: true,
@@ -32,33 +34,50 @@ export class UsersService {
   // ---------------- UPDATE PROFILE ----------------
   async updateProfile(
     userId: number,
-    data: { name?: string; email?: string }
+    data: UpdateProfileDto,
+    profileImage?: string,
   ) {
-    // Email uniqueness check
-    if (data.email) {
-      const existing = await this.prisma.user.findFirst({
-        where: {
-          email: data.email,
-          NOT: { id: userId },
-        },
-      });
+    const email = data.email.trim().toLowerCase();
+    const phone = data.phone.trim();
 
-      if (existing) {
-        throw new BadRequestException("Email already in use");
-      }
+    const existingEmail = await this.prisma.user.findFirst({
+      where: {
+        email,
+        NOT: { id: userId },
+      },
+    });
+
+    if (existingEmail) {
+      throw new BadRequestException("Email already in use");
+    }
+
+    const existingPhone = await this.prisma.user.findFirst({
+      where: {
+        phone,
+        NOT: { id: userId },
+      },
+    });
+
+    if (existingPhone) {
+      throw new BadRequestException("Phone number already in use");
     }
 
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: {
-        name: data.name,
-        email: data.email,
+        name: data.name.trim(),
+        email,
+        phone,
+        ...(profileImage
+          ? { profileImage: `/uploads/profiles/${profileImage}` }
+          : {}),
       },
       select: {
         id: true,
         name: true,
         email: true,
         phone: true,
+        profileImage: true,
         role: true,
       },
     });

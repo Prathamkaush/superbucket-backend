@@ -6,9 +6,16 @@ import {
   UseGuards,
   Req,
   BadRequestException,
+  UploadedFile,
+  UseInterceptors,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { diskStorage } from "multer";
+import { mkdirSync } from "fs";
+import { extname, join } from "path";
 import { UsersService } from "./users.service";
 import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
+import { UpdateProfileDto } from "./dto/update-profile.dto";
 
 // ✅ Swagger
 import {
@@ -16,6 +23,7 @@ import {
   ApiBearerAuth,
   ApiOperation,
   ApiBody,
+  ApiConsumes,
 } from "@nestjs/swagger";
 
 @ApiTags("Users")
@@ -24,6 +32,18 @@ import {
 @UseGuards(JwtAuthGuard)
 export class UsersController {
   constructor(private usersService: UsersService) {}
+
+  private static profileImageStorage = diskStorage({
+    destination: (_req, _file, cb) => {
+      const uploadPath = join(process.cwd(), "uploads", "profiles");
+      mkdirSync(uploadPath, { recursive: true });
+      cb(null, uploadPath);
+    },
+    filename: (_req, file, cb) => {
+      const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+      cb(null, `${uniqueName}${extname(file.originalname).toLowerCase()}`);
+    },
+  });
 
   /* ================= GET PROFILE ================= */
   @ApiOperation({
@@ -38,32 +58,32 @@ export class UsersController {
   /* ================= UPDATE PROFILE ================= */
   @ApiOperation({
     summary: "Update user profile",
-    description: "Update name and/or email of the authenticated user",
+    description: "Update the authenticated user's profile",
   })
-  @ApiBody({
-    schema: {
-      type: "object",
-      properties: {
-        name: {
-          type: "string",
-          example: "Pratham Kaushik",
-        },
-        email: {
-          type: "string",
-          example: "pratham@example.com",
-        },
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({ type: UpdateProfileDto })
+  @UseInterceptors(
+    FileInterceptor("image", {
+      storage: UsersController.profileImageStorage,
+      limits: { fileSize: 5 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+        if (!allowedTypes.includes(file.mimetype)) {
+          return cb(
+            new BadRequestException("Profile image must be a JPEG, PNG, or WebP file"),
+            false,
+          );
+        }
+        cb(null, true);
       },
-    },
-  })
+    }),
+  )
   @Patch("profile")
   updateProfile(
     @Req() req: any,
-    @Body() body: { name?: string; email?: string }
+    @Body() body: UpdateProfileDto,
+    @UploadedFile() image?: Express.Multer.File,
   ) {
-    if (!body.name && !body.email) {
-      throw new BadRequestException("Nothing to update");
-    }
-
-    return this.usersService.updateProfile(req.user.id, body);
+    return this.usersService.updateProfile(req.user.id, body, image?.filename);
   }
 }

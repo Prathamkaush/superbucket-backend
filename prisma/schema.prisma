@@ -38,6 +38,7 @@ model User {
   name         String?
   email        String?  @unique
   phone        String?  @unique
+  profileImage String?
   passwordHash String?
   googleId     String?  @unique
   isVerified   Boolean  @default(false)
