@@ -10,6 +10,7 @@ import { SettingsService } from "./settings.service";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
 import { extname } from "path";
+import { mkdirSync } from "fs";
 
 // ✅ Swagger
 import {
@@ -23,6 +24,18 @@ import {
 @Controller("settings")
 export class SettingsController {
   constructor(private readonly service: SettingsService) {}
+
+  private static settingsStorage = diskStorage({
+    destination: (_, __, callback) => {
+      const uploadPath = "./uploads/settings";
+      mkdirSync(uploadPath, { recursive: true });
+      callback(null, uploadPath);
+    },
+    filename: (_, file, callback) => {
+      const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
+      callback(null, unique + extname(file.originalname));
+    },
+  });
 
   /* ================= GET ALL SETTINGS ================= */
   @ApiOperation({
@@ -75,14 +88,7 @@ export class SettingsController {
   @Patch("store")
   @UseInterceptors(
     FileInterceptor("logo", {
-      storage: diskStorage({
-        destination: "./uploads/settings",
-        filename: (_, file, callback) => {
-          const unique =
-            Date.now() + "-" + Math.round(Math.random() * 1e9);
-          callback(null, unique + extname(file.originalname));
-        },
-      }),
+      storage: SettingsController.settingsStorage,
     })
   )
   async updateStore(

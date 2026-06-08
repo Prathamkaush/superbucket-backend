@@ -1,4 +1,10 @@
-import { IsNotEmpty, IsNumber, IsOptional, IsString, IsArray } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsArray,
+} from 'class-validator';
 
 export class CreateProductDto {
   @IsString()
@@ -30,9 +36,11 @@ export class CreateProductDto {
   @IsNumber()
   categoryId: number;
 
+  @IsOptional()
   @IsNumber()
-  typeId: number;
+  typeId?: number;
 
+  @IsOptional()
   @IsNumber()
-  subtypeId: number;
+  subtypeId?: number;
 }

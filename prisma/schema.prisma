@@ -99,53 +99,53 @@ model ProductSubtype {
 //  PRODUCT MODEL
 // -----------------------------------------
 model Product {
-  id                Int      @id @default(autoincrement())
+  id                Int           @id @default(autoincrement())
   title             String
-  slug              String?  @unique
-  description       String?  @db.Text
-  shortDescription  String?  @db.Text
-  price             Decimal  @db.Decimal(10, 2)
-  gstRate           Decimal  @default(0) @db.Decimal(5, 2)
+  slug              String?       @unique
+  description       String?       @db.Text
+  shortDescription  String?       @db.Text
+  price             Decimal       @db.Decimal(10, 2)
+  gstRate           Decimal       @default(0) @db.Decimal(5, 2)
   estimatedShipping Int
   discountType      String?
-  discountValue     Decimal? @db.Decimal(10, 2)
-  freeShipping      Boolean  @default(false)
-  isTrending        Boolean  @default(false)
-  isFeatured        Boolean  @default(false)
-  isBestSeller      Boolean  @default(false)
-  isNewLaunch       Boolean  @default(false)
-  isActive          Boolean  @default(true)
+  discountValue     Decimal?      @db.Decimal(10, 2)
+  freeShipping      Boolean       @default(false)
+  isTrending        Boolean       @default(false)
+  isFeatured        Boolean       @default(false)
+  isBestSeller      Boolean       @default(false)
+  isNewLaunch       Boolean       @default(false)
+  isActive          Boolean       @default(true)
   status            ProductStatus @default(ACTIVE)
   stock             Int
-  weight            Decimal? @db.Decimal(6, 2)
+  weight            Decimal?      @db.Decimal(6, 2)
 
   // Supplement-specific PDP fields inspired by sports nutrition sites.
-  brandName             String?
-  productLine           String?
-  goal                  String?
-  dietaryPreference     String?
-  proteinType           String?
-  servingSize           String?
-  servingsPerContainer  Int?
-  proteinPerServing     Decimal? @db.Decimal(8, 2)
-  bcaaPerServing        Decimal? @db.Decimal(8, 2)
-  eaaPerServing         Decimal? @db.Decimal(8, 2)
-  caloriesPerServing    Decimal? @db.Decimal(8, 2)
-  proteinPercentage     Decimal? @db.Decimal(5, 2)
-  ingredients           String?  @db.Text
-  keyBenefits           Json?
-  howToUse              String?  @db.Text
-  whenToUse             String?  @db.Text
-  safetyInformation     String?  @db.Text
-  allergenInfo          String?  @db.Text
-  certifications        Json?
-  fssaiLicense          String?
-  countryOfOrigin       String?
-  marketedBy            String?  @db.Text
-  manufacturedBy        String?  @db.Text
-  sellerName            String?
-  authenticityNote      String?  @db.Text
-  returnPolicy          String?  @db.Text
+  brandName            String?
+  productLine          String?
+  goal                 String?
+  dietaryPreference    String?
+  proteinType          String?
+  servingSize          String?
+  servingsPerContainer Int?
+  proteinPerServing    Decimal? @db.Decimal(8, 2)
+  bcaaPerServing       Decimal? @db.Decimal(8, 2)
+  eaaPerServing        Decimal? @db.Decimal(8, 2)
+  caloriesPerServing   Decimal? @db.Decimal(8, 2)
+  proteinPercentage    Decimal? @db.Decimal(5, 2)
+  ingredients          String?  @db.Text
+  keyBenefits          Json?
+  howToUse             String?  @db.Text
+  whenToUse            String?  @db.Text
+  safetyInformation    String?  @db.Text
+  allergenInfo         String?  @db.Text
+  certifications       Json?
+  fssaiLicense         String?
+  countryOfOrigin      String?
+  marketedBy           String?  @db.Text
+  manufacturedBy       String?  @db.Text
+  sellerName           String?
+  authenticityNote     String?  @db.Text
+  returnPolicy         String?  @db.Text
 
   metaTitle       String?
   metaDescription String?
@@ -161,15 +161,15 @@ model Product {
 
   // ---------- FK ----------
   categoryId Int
-  typeId     Int
-  subtypeId  Int
+  typeId     Int?
+  subtypeId  Int?
   seasonId   Int?
 
   // ---------- BELONGS TO ----------
-  category Category       @relation(fields: [categoryId], references: [id])
-  type     ProductType    @relation(fields: [typeId], references: [id])
-  subtype  ProductSubtype @relation(fields: [subtypeId], references: [id])
-  season   Season?        @relation(fields: [seasonId], references: [id])
+  category Category        @relation(fields: [categoryId], references: [id])
+  type     ProductType?    @relation(fields: [typeId], references: [id])
+  subtype  ProductSubtype? @relation(fields: [subtypeId], references: [id])
+  season   Season?         @relation(fields: [seasonId], references: [id])
 
   // ---------- MANY TO MANY (JOIN TABLES) ----------
   productColors    ProductColor[]
@@ -196,29 +196,29 @@ model Product {
 //  Examples: Rich Milk Chocolate / 1 kg / 30 servings.
 // -----------------------------------------
 model ProductVariant {
-  id        Int           @id @default(autoincrement())
+  id        Int     @id @default(autoincrement())
   productId Int
-  product   Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  sku       String?       @unique
-  flavour   String?
-  weightLabel String?
-  netQuantity String?
-  servings  Int?
-  mrp       Decimal?      @db.Decimal(10, 2)
-  price     Decimal       @db.Decimal(10, 2)
+  sku           String?       @unique
+  flavour       String?
+  weightLabel   String?
+  netQuantity   String?
+  servings      Int?
+  mrp           Decimal?      @db.Decimal(10, 2)
+  price         Decimal       @db.Decimal(10, 2)
   discountType  String?
-  discountValue Decimal?  @db.Decimal(10, 2)
-  stock     Int
-  weightKg  Decimal?      @db.Decimal(6, 2)
-  image1    String?
-  image2    String?
-  image3    String?
-  image4    String?
-  status    VariantStatus @default(ACTIVE)
-  isDefault Boolean       @default(false)
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  discountValue Decimal?      @db.Decimal(10, 2)
+  stock         Int
+  weightKg      Decimal?      @db.Decimal(6, 2)
+  image1        String?
+  image2        String?
+  image3        String?
+  image4        String?
+  status        VariantStatus @default(ACTIVE)
+  isDefault     Boolean       @default(false)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
   cartItems  CartItem[]
   orderItems OrderItem[]
@@ -234,15 +234,15 @@ model ProductVariant {
 //  Examples: Protein 25g, BCAA 5.5g, Energy 110 kcal.
 // -----------------------------------------
 model NutritionFact {
-  id        Int      @id @default(autoincrement())
+  id        Int     @id @default(autoincrement())
   productId Int
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  name      String
-  amount    String
-  unit      String?
-  per       String?  @default("serving")
-  position  Int      @default(0)
+  name     String
+  amount   String
+  unit     String?
+  per      String? @default("serving")
+  position Int     @default(0)
 
   @@index([productId])
 }
@@ -398,17 +398,17 @@ enum VendorType {
 }
 
 model Vendor {
-  id                Int      @id @default(autoincrement())
+  id                Int        @id @default(autoincrement())
   companyName       String
   contactPersonName String
   contactNumber     String
-  emailId           String   @unique
+  emailId           String     @unique
   gstNumber         String?
   address           String
   vendorType        VendorType
-  isActive          Boolean  @default(true)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  isActive          Boolean    @default(true)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
 
   productVendors ProductVendor[]
 
@@ -417,16 +417,16 @@ model Vendor {
 }
 
 model ProductVendor {
-  id            Int      @id @default(autoincrement())
-  productId     Int
-  vendorId      Int
-  
-  costPrice     Decimal  @db.Decimal(10, 2) // what you bought it for
-  fabricType    String?  // optional: specific fabric for this vendor
-  quantity      Int      @default(1) // how many units from this vendor
-  
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id        Int @id @default(autoincrement())
+  productId Int
+  vendorId  Int
+
+  costPrice  Decimal @db.Decimal(10, 2) // what you bought it for
+  fabricType String? // optional: specific fabric for this vendor
+  quantity   Int     @default(1) // how many units from this vendor
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   vendor  Vendor  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
@@ -517,11 +517,11 @@ model OrderItem {
   size   ProductSize? @relation(fields: [sizeId], references: [id])
 
   // SUPPLEMENT VARIANT SNAPSHOT
-  variantId    Int?
-  variant      ProductVariant? @relation(fields: [variantId], references: [id])
-  flavour      String?
-  weightLabel  String?
-  sku          String?
+  variantId   Int?
+  variant     ProductVariant? @relation(fields: [variantId], references: [id])
+  flavour     String?
+  weightLabel String?
+  sku         String?
 
   // RELATIONS
   orderId   Int
@@ -740,7 +740,7 @@ model InfluencerItem {
   influencerName String?
   ctaText        String? @default("Shop Now")
 
-  position Int
+  position  Int
   createdAt DateTime @default(now())
 
   @@index([homepageSectionId])
