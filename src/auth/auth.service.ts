@@ -3,6 +3,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { JwtService } from "@nestjs/jwt";
 import { UserRole } from "@prisma/client";
 import * as bcrypt from "bcrypt";
+import { GoogleProfile } from "./strategies/google.strategy";
 
 @Injectable()
 export class AuthService {
@@ -75,6 +76,58 @@ export class AuthService {
         role: UserRole.USER,
       },
     });
+
+    const token = this.jwtService.sign({
+      sub: user.id,
+      phone: user.phone,
+      email: user.email,
+      role: user.role,
+    });
+
+    return { token, user };
+  }
+
+  // ----------------------------------------------------------
+  // GOOGLE LOGIN / REGISTER
+  // ----------------------------------------------------------
+  async googleLogin(profile: GoogleProfile) {
+    if (!profile.email || !profile.googleId) {
+      throw new BadRequestException("Google account email is required");
+    }
+
+    const email = profile.email.trim().toLowerCase();
+    const existingByGoogleId = await this.prisma.user.findUnique({
+      where: { googleId: profile.googleId },
+    });
+
+    let user = existingByGoogleId;
+
+    if (!user) {
+      const existingByEmail = await this.prisma.user.findUnique({
+        where: { email },
+      });
+
+      user = existingByEmail
+        ? await this.prisma.user.update({
+            where: { id: existingByEmail.id },
+            data: {
+              googleId: profile.googleId,
+              name: existingByEmail.name || profile.name,
+              profileImage: existingByEmail.profileImage || profile.profileImage,
+              isVerified: true,
+            },
+          })
+        : await this.prisma.user.create({
+            data: {
+              googleId: profile.googleId,
+              email,
+              name: profile.name,
+              profileImage: profile.profileImage,
+              isVerified: true,
+              role: UserRole.USER,
+            },
+          });
+    }
 
     const token = this.jwtService.sign({
       sub: user.id,

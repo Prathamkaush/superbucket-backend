@@ -5,7 +5,9 @@ import {
   Get,
   UseGuards,
   Req,
+  Res,
 } from "@nestjs/common";
+import { AuthGuard } from "@nestjs/passport";
 import { AuthService } from "./auth.service";
 import { JwtAuthGuard } from "./strategies/jwt-auth.guard";
 import { IsString, IsNotEmpty, IsEmail } from "class-validator";
@@ -108,5 +110,35 @@ export class AuthController {
   @Get("me")
   me(@Req() req: any) {
     return req.user;
+  }
+
+  // ---------------- GOOGLE LOGIN ----------------
+  @ApiOperation({
+    summary: "Start Google login",
+  })
+  @Get("google")
+  @UseGuards(AuthGuard("google"))
+  googleAuth() {
+    return;
+  }
+
+  @ApiOperation({
+    summary: "Google login callback",
+  })
+  @Get("google/callback")
+  @UseGuards(AuthGuard("google"))
+  async googleAuthCallback(@Req() req: any, @Res() res: any) {
+    const data = await this.authService.googleLogin(req.user);
+    const frontendUrl =
+      process.env.CUSTOMER_FRONTEND_URL ||
+      process.env.FRONTEND_URL ||
+      "http://localhost:3000";
+
+    const params = new URLSearchParams({
+      token: data.token,
+      user: Buffer.from(JSON.stringify(data.user), "utf8").toString("base64url"),
+    });
+
+    return res.redirect(`${frontendUrl}/auth/google/callback?${params.toString()}`);
   }
 }
