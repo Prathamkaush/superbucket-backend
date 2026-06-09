@@ -225,7 +225,7 @@ export class ProductsService {
 
   private async getRatingSummary(productId: number) {
     const rating = await this.prisma.review.aggregate({
-      where: { productId },
+      where: { productId, status: 'APPROVED' },
       _avg: { rating: true },
       _count: { rating: true },
     });
@@ -424,6 +424,8 @@ export class ProductsService {
           productLine: body.productLine || null,
           goal: body.goal || null,
           dietaryPreference: body.dietaryPreference || null,
+          dietaryType: body.dietaryType || 'UNSPECIFIED',
+          tags: parseJsonValue(body.tags, 'tags') ?? [],
           proteinType: body.proteinType || null,
           servingSize: body.servingSize || null,
           servingsPerContainer: body.servingsPerContainer
@@ -593,6 +595,9 @@ export class ProductsService {
       sleeves,
       patterns,
       freeShipping,
+      dietaryType,
+      tag,
+      minRating,
     } = query;
 
     const where: any = {
@@ -634,6 +639,31 @@ export class ProductsService {
 
     if (freeShipping === 'true') {
       where.AND.push({ freeShipping: true });
+    }
+
+    if (dietaryType && dietaryType !== 'ALL') {
+      where.AND.push({ dietaryType });
+    }
+
+    if (tag) {
+      where.AND.push({ tags: { array_contains: [tag] } });
+    }
+
+    if (minRating) {
+      const minimumRating = Math.min(Math.max(Number(minRating) || 0, 1), 5);
+      const ratedProducts = await this.prisma.review.groupBy({
+        by: ['productId'],
+        where: { status: 'APPROVED' },
+        _avg: { rating: true },
+        having: {
+          rating: {
+            _avg: { gte: minimumRating },
+          },
+        },
+      });
+      where.AND.push({
+        id: { in: ratedProducts.map((review) => review.productId) },
+      });
     }
 
     /* ---------------- SEARCH ---------------- */
@@ -800,13 +830,20 @@ export class ProductsService {
       },
     });
 
-    const [total, ratingRows] = await Promise.all([
+    const [total, ratingRows, filterProducts] = await Promise.all([
       this.prisma.product.count({ where }),
       this.prisma.review.groupBy({
         by: ['productId'],
-        where: { productId: { in: products.map((product) => product.id) } },
+        where: {
+          productId: { in: products.map((product) => product.id) },
+          status: 'APPROVED',
+        },
         _avg: { rating: true },
         _count: { rating: true },
+      }),
+      this.prisma.product.findMany({
+        where: { isActive: true },
+        select: { tags: true },
       }),
     ]);
     const ratingsByProduct = new Map(
@@ -829,6 +866,15 @@ export class ProductsService {
       total,
       page: page ? Number(page) : 1,
       pages: take ? Math.ceil(total / take) : 1,
+      availableTags: Array.from(
+        new Set(
+          filterProducts.flatMap((product) =>
+            Array.isArray(product.tags)
+              ? product.tags.filter((tag): tag is string => typeof tag === 'string')
+              : [],
+          ),
+        ),
+      ).sort(),
     };
   }
 
@@ -1339,6 +1385,14 @@ export class ProductsService {
 
     if (body.status !== undefined) {
       data.status = body.status || 'ACTIVE';
+    }
+
+    if (body.dietaryType !== undefined) {
+      data.dietaryType = body.dietaryType || 'UNSPECIFIED';
+    }
+
+    if (body.tags !== undefined) {
+      data.tags = parseJsonValue(body.tags, 'tags') ?? [];
     }
 
     if (body.freeShipping !== undefined) {

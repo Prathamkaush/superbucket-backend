@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Req,
   UseGuards,
@@ -13,6 +14,7 @@ import { ReviewsService } from "./reviews.service";
 import { CreateReviewDto } from "./dto/create-review.dto";
 import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
 import { AdminGuard } from "../auth/admin.guard";
+import { UpdateReviewStatusDto } from "./dto/update-review-status.dto";
 
 // ✅ Swagger
 import {
@@ -75,6 +77,18 @@ export class ReviewsController {
   @Post()
   create(@Req() req: any, @Body() dto: CreateReviewDto) {
     return this.reviewsService.createReview(req.user.id, dto);
+  }
+
+  @ApiBearerAuth("JWT-auth")
+  @ApiOperation({ summary: "Approve or reject a review (Admin)" })
+  @ApiParam({ name: "id", type: Number, description: "Review ID" })
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @Patch("admin/:id/status")
+  updateReviewStatus(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() dto: UpdateReviewStatusDto,
+  ) {
+    return this.reviewsService.updateStatus(id, dto.status);
   }
 
   @ApiOperation({

@@ -33,6 +33,19 @@ enum VariantStatus {
   INACTIVE
 }
 
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum DietaryType {
+  UNSPECIFIED
+  VEGETARIAN
+  NON_VEGETARIAN
+  VEGAN
+}
+
 model User {
   id           Int      @id @default(autoincrement())
   name         String?
@@ -124,28 +137,30 @@ model Product {
   productLine          String?
   goal                 String?
   dietaryPreference    String?
+  dietaryType          DietaryType @default(UNSPECIFIED)
+  tags                 Json?
   proteinType          String?
   servingSize          String?
   servingsPerContainer Int?
-  proteinPerServing    Decimal? @db.Decimal(8, 2)
-  bcaaPerServing       Decimal? @db.Decimal(8, 2)
-  eaaPerServing        Decimal? @db.Decimal(8, 2)
-  caloriesPerServing   Decimal? @db.Decimal(8, 2)
-  proteinPercentage    Decimal? @db.Decimal(5, 2)
-  ingredients          String?  @db.Text
+  proteinPerServing    Decimal?    @db.Decimal(8, 2)
+  bcaaPerServing       Decimal?    @db.Decimal(8, 2)
+  eaaPerServing        Decimal?    @db.Decimal(8, 2)
+  caloriesPerServing   Decimal?    @db.Decimal(8, 2)
+  proteinPercentage    Decimal?    @db.Decimal(5, 2)
+  ingredients          String?     @db.Text
   keyBenefits          Json?
-  howToUse             String?  @db.Text
-  whenToUse            String?  @db.Text
-  safetyInformation    String?  @db.Text
-  allergenInfo         String?  @db.Text
+  howToUse             String?     @db.Text
+  whenToUse            String?     @db.Text
+  safetyInformation    String?     @db.Text
+  allergenInfo         String?     @db.Text
   certifications       Json?
   fssaiLicense         String?
   countryOfOrigin      String?
-  marketedBy           String?  @db.Text
-  manufacturedBy       String?  @db.Text
+  marketedBy           String?     @db.Text
+  manufacturedBy       String?     @db.Text
   sellerName           String?
-  authenticityNote     String?  @db.Text
-  returnPolicy         String?  @db.Text
+  authenticityNote     String?     @db.Text
+  returnPolicy         String?     @db.Text
 
   metaTitle       String?
   metaDescription String?
@@ -563,13 +578,14 @@ model Settings {
 //  Reviews
 // -----------------------------------------
 model Review {
-  id        Int      @id @default(autoincrement())
+  id        Int          @id @default(autoincrement())
   rating    Int
   comment   String?
+  status    ReviewStatus @default(PENDING)
   userId    Int
   productId Int
   orderId   Int?
-  createdAt DateTime @default(now())
+  createdAt DateTime     @default(now())
 
   user    User    @relation(fields: [userId], references: [id])
   product Product @relation(fields: [productId], references: [id])

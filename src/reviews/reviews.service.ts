@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateReviewDto } from "./dto/create-review.dto";
+import { ReviewStatus } from "@prisma/client";
 
 @Injectable()
 export class ReviewsService {
@@ -71,7 +72,7 @@ export class ReviewsService {
 
   async getProductReviews(productId: number) {
     const reviews = await this.prisma.review.findMany({
-      where: { productId },
+      where: { productId, status: ReviewStatus.APPROVED },
       include: {
         user: { select: { name: true } },
       },
@@ -105,6 +106,7 @@ export class ReviewsService {
 
   getLatest(limit = 4) {
     return this.prisma.review.findMany({
+      where: { status: ReviewStatus.APPROVED },
       take: Math.min(Math.max(Number(limit) || 4, 1), 12),
       orderBy: { createdAt: "desc" },
       include: {
@@ -119,12 +121,14 @@ export class ReviewsService {
   }
 
   async getAllPaginated(page = 1, limit = 5) {
-    const skip = (page - 1) * limit;
+    const safePage = Math.max(Number(page) || 1, 1);
+    const safeLimit = Math.min(Math.max(Number(limit) || 5, 1), 50);
+    const skip = (safePage - 1) * safeLimit;
 
     const [reviews, total] = await Promise.all([
       this.prisma.review.findMany({
         skip,
-        take: limit,
+        take: safeLimit,
         orderBy: { createdAt: "desc" },
         include: {
           user: {
@@ -140,10 +144,34 @@ export class ReviewsService {
 
     return {
       data: reviews,
-      page,
-      limit,
+      page: safePage,
+      limit: safeLimit,
       total,
-      pages: Math.ceil(total / limit),
+      pages: Math.max(Math.ceil(total / safeLimit), 1),
     };
+  }
+
+  async updateStatus(id: number, status: ReviewStatus) {
+    const review = await this.prisma.review.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+
+    if (!review) {
+      throw new NotFoundException("Review not found");
+    }
+
+    return this.prisma.review.update({
+      where: { id },
+      data: { status },
+      include: {
+        user: {
+          select: { name: true, email: true },
+        },
+        product: {
+          select: { id: true, title: true },
+        },
+      },
+    });
   }
 }
