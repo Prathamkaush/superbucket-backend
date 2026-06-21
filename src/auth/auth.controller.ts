@@ -10,7 +10,7 @@ import {
 import { AuthGuard } from "@nestjs/passport";
 import { AuthService } from "./auth.service";
 import { JwtAuthGuard } from "./strategies/jwt-auth.guard";
-import { IsString, IsNotEmpty, IsEmail } from "class-validator";
+import { IsString, IsNotEmpty, IsEmail, Matches } from "class-validator";
 
 // ✅ Swagger imports
 import {
@@ -56,12 +56,50 @@ class AdminLoginDto {
   password: string;
 }
 
+class GoogleMobileLoginDto {
+  @IsString()
+  @IsNotEmpty()
+  idToken: string;
+}
+
+class SendPhoneOtpDto {
+  @IsString()
+  @Matches(/^(\+?91)?[6-9]\d{9}$/, {
+    message: "Enter a valid 10-digit Indian mobile number",
+  })
+  phone: string;
+}
+
+class VerifyPhoneOtpDto {
+  @IsString()
+  @IsNotEmpty()
+  challengeToken: string;
+
+  @IsString()
+  @Matches(/^\d{4}$/, { message: "OTP must be 4 digits" })
+  otp: string;
+}
+
 // ---------------------------------------
 
 @ApiTags("Auth") // 👈 Swagger group
 @Controller("auth")
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  @ApiOperation({ summary: "Send login OTP to an Indian mobile number" })
+  @ApiBody({ type: SendPhoneOtpDto })
+  @Post("phone/send-otp")
+  sendPhoneOtp(@Body() body: SendPhoneOtpDto) {
+    return this.authService.sendPhoneOtp(body.phone);
+  }
+
+  @ApiOperation({ summary: "Verify mobile OTP and login or register user" })
+  @ApiBody({ type: VerifyPhoneOtpDto })
+  @Post("phone/verify-otp")
+  verifyPhoneOtp(@Body() body: VerifyPhoneOtpDto) {
+    return this.authService.verifyPhoneOtp(body.challengeToken, body.otp);
+  }
 
   // ---------------- EMAIL/PASSWORD LOGIN ----------------
   @ApiOperation({
@@ -99,6 +137,16 @@ export class AuthController {
   @Post("admin/login")
   adminLogin(@Body() body: AdminLoginDto) {
     return this.authService.validateAdmin(body.email, body.password);
+  }
+
+  @ApiOperation({
+    summary: "Google login for Android and iOS applications",
+  })
+  @ApiBody({ type: GoogleMobileLoginDto })
+  @ApiUnauthorizedResponse({ description: "Invalid Google ID token" })
+  @Post("google/mobile")
+  googleMobileLogin(@Body() body: GoogleMobileLoginDto) {
+    return this.authService.googleMobileLogin(body.idToken);
   }
 
   // ---------------- USER PROFILE ----------------

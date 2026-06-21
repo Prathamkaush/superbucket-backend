@@ -245,6 +245,8 @@ async createOrder(
             discountValue: i.product.discountValue,
             gstRate: Number(i.gstRate || 0),
             gstAmount: Number(i.gstAmount || 0),
+            variantName: i.variant?.name ?? null,
+            variantAttributes: i.variant?.attributes ?? undefined,
             flavour: i.variant?.flavour ?? null,
             weightLabel: i.variant?.weightLabel ?? null,
             sku: i.variant?.sku ?? null,
@@ -262,7 +264,7 @@ async createOrder(
         });
         if (!updated.count) {
           throw new BadRequestException(
-            `${item.product.title} (${item.variant?.flavour || item.variant?.weightLabel}) is out of stock`
+            `${item.product.title} (${item.variant?.name || item.variant?.flavour || item.variant?.weightLabel || "variant"}) is out of stock`
           );
         }
       } else if (item.sizeId) {
@@ -356,6 +358,8 @@ async getMyOrders(userId: number, page = 1, limit = 5) {
             select: {
               id: true,
               sku: true,
+              name: true,
+              attributes: true,
               flavour: true,
               weightLabel: true,
               image1: true,
@@ -568,7 +572,7 @@ async reorder(orderId: number, userId: number) {
     if (item.variantId) {
       if (!item.variant || item.variant.stock < item.quantity) {
         throw new BadRequestException(
-          `${item.product.title} (${item.flavour || item.weightLabel || "variant"}) is out of stock`
+          `${item.product.title} (${item.variantName || item.flavour || item.weightLabel || "variant"}) is out of stock`
         );
       }
     } else if (item.sizeId) {

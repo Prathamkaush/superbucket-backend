@@ -55,6 +55,8 @@ async getCart(userId: number) {
         select: {
           id: true,
           sku: true,
+          name: true,
+          attributes: true,
           flavour: true,
           weightLabel: true,
           image1: true,
@@ -105,7 +107,7 @@ async addToCart(
       : activeVariants.find((variant) => variant.isDefault);
 
     if (!selectedVariant) {
-      throw new BadRequestException("Please select a valid flavour and weight");
+      throw new BadRequestException("Please select a valid product variant");
     }
   }
 

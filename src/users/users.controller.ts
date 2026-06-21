@@ -86,4 +86,24 @@ export class UsersController {
   ) {
     return this.usersService.updateProfile(req.user.id, body, image?.filename);
   }
+
+  /* ================= UPDATE BANK DETAILS ================= */
+  @ApiOperation({
+    summary: "Update user bank details",
+    description: "Update account number, IFSC code, and account holder name",
+  })
+  @Patch("bank")
+  updateBankDetails(
+    @Req() req: any,
+    @Body("bankAccountNumber") bankAccountNumber: string,
+    @Body("bankIfsc") bankIfsc: string,
+    @Body("bankAccountName") bankAccountName: string,
+  ) {
+    return this.usersService.updateBankDetails(
+      req.user.id,
+      bankAccountNumber,
+      bankIfsc,
+      bankAccountName,
+    );
+  }
 }

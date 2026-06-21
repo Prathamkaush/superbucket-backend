@@ -1,28 +1,45 @@
-import { IsString, IsNotEmpty, IsOptional, IsBoolean } from "class-validator";
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsBoolean,
+  Matches,
+  MaxLength,
+} from "class-validator";
 
 export class CreateAddressDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(100)
   name: string;
 
   @IsString()
   @IsNotEmpty()
+  @Matches(/^[6-9]\d{9}$/, {
+    message: "Phone number must contain a valid 10-digit Indian mobile number",
+  })
   phone: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(300)
   street: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(100)
   city: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(100)
   state: string;
 
   @IsString()
   @IsNotEmpty()
+  @Matches(/^\d{6}$/, {
+    message: "Pincode must contain exactly 6 digits",
+  })
   pincode: string;
 
   @IsOptional()

@@ -76,6 +76,8 @@ variant: {
 select: {
 id: true,
 sku: true,
+name: true,
+attributes: true,
 flavour: true,
 weightLabel: true,
 price: true,

@@ -136,8 +136,31 @@ function mapVariantInput(variant: any, index: number) {
     throw new BadRequestException(`Invalid variant stock at row ${index + 1}`);
   }
 
+  const attributes = Array.isArray(variant.attributes)
+    ? variant.attributes
+        .map((attribute: any) => ({
+          name: String(attribute?.name || '').trim(),
+          value: String(attribute?.value || '').trim(),
+        }))
+        .filter((attribute: any) => attribute.name && attribute.value)
+    : [];
+  const legacyName = [
+    variant.flavour || variant.flavor,
+    variant.weightLabel || variant.weight,
+  ]
+    .filter(Boolean)
+    .join(' / ');
+  const name =
+    String(variant.name || '').trim() ||
+    attributes.map((attribute: any) => attribute.value).join(' / ') ||
+    legacyName ||
+    `Variant ${index + 1}`;
+
   return {
     sku: variant.sku || null,
+    name,
+    attributes,
+    barcode: variant.barcode || null,
     flavour: variant.flavour || variant.flavor || null,
     weightLabel: variant.weightLabel || variant.weight || null,
     netQuantity: variant.netQuantity || null,
@@ -252,7 +275,7 @@ export class ProductsService {
       body.gstRate !== undefined && body.gstRate !== ''
         ? Number(body.gstRate)
         : 0;
-    const weight = Number(body.weight);
+    const weight = Number(body.weight || 0.1);
     const freeShipping = parseBool(body.freeShipping);
     const providedEstimatedShipping = Number(body.estimatedShipping);
     const estimatedShipping = Number.isFinite(providedEstimatedShipping)
@@ -269,9 +292,9 @@ export class ProductsService {
       throw new BadRequestException('GST rate must be between 0 and 100');
     }
 
-    if (isNaN(weight) || weight < 0.05 || weight > 10) {
+    if (isNaN(weight) || weight < 0.01 || weight > 100) {
       throw new BadRequestException(
-        'Product weight must be between 0.05kg and 10kg',
+        'Shipping weight must be between 0.01kg and 100kg',
       );
     }
 
@@ -322,12 +345,6 @@ export class ProductsService {
     const categoryId = parseOptionalId(body.categoryId);
     const typeId = parseOptionalId(body.typeId);
     const subtypeId = parseOptionalId(body.subtypeId);
-
-     console.log('=== CREATE PRODUCT DEBUG ===');
-     console.log('body.typeId raw:', JSON.stringify(body.typeId));
-     console.log('body.categoryId raw:', JSON.stringify(body.categoryId));
-     console.log('typeId parsed:', parseOptionalId(body.typeId));
-     console.log('categoryId parsed:', parseOptionalId(body.categoryId));
 
     if (!categoryId) {
       throw new BadRequestException('Category is required');
@@ -420,7 +437,13 @@ export class ProductsService {
           isNewLaunch: parseBool(body.isNewLaunch),
           freeShipping,
 
-          brandName: body.brandName || 'InsaneGenix',
+          brandName: body.brandName || null,
+          specifications:
+            parseJsonValue(body.specifications, 'specifications') ?? [],
+          warranty: body.warranty || null,
+          shelfLife: body.shelfLife || null,
+          storageInstructions: body.storageInstructions || null,
+          hsnCode: body.hsnCode || null,
           productLine: body.productLine || null,
           goal: body.goal || null,
           dietaryPreference: body.dietaryPreference || null,
@@ -1350,7 +1373,7 @@ export class ProductsService {
 
     if (body.weight !== undefined) {
       const weight = Number(body.weight);
-      if (!isNaN(weight) && weight >= 0.05 && weight <= 10) {
+      if (!isNaN(weight) && weight >= 0.01 && weight <= 100) {
         data.weight = new Prisma.Decimal(weight);
       }
     }
@@ -1395,6 +1418,11 @@ export class ProductsService {
       data.tags = parseJsonValue(body.tags, 'tags') ?? [];
     }
 
+    if (body.specifications !== undefined) {
+      data.specifications =
+        parseJsonValue(body.specifications, 'specifications') ?? [];
+    }
+
     if (body.freeShipping !== undefined) {
       data.freeShipping = parseBool(body.freeShipping);
     }
@@ -1418,6 +1446,10 @@ export class ProductsService {
       'sellerName',
       'authenticityNote',
       'returnPolicy',
+      'warranty',
+      'shelfLife',
+      'storageInstructions',
+      'hsnCode',
     ];
 
     for (const field of supplementTextFields) {

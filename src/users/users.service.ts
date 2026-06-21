@@ -22,6 +22,9 @@ export class UsersService {
         profileImage: true,
         role: true,
         isVerified: true,
+        bankAccountNumber: true,
+        bankIfsc: true,
+        bankAccountName: true,
         createdAt: true,
       },
     });
@@ -79,11 +82,49 @@ export class UsersService {
         phone: true,
         profileImage: true,
         role: true,
+        isVerified: true,
+        bankAccountNumber: true,
+        bankIfsc: true,
+        bankAccountName: true,
       },
     });
 
     return {
       message: "Profile updated successfully",
+      user,
+    };
+  }
+
+  // ---------------- UPDATE BANK DETAILS ----------------
+  async updateBankDetails(
+    userId: number,
+    bankAccountNumber: string,
+    bankIfsc: string,
+    bankAccountName: string,
+  ) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        bankAccountNumber: bankAccountNumber ? bankAccountNumber.trim() : null,
+        bankIfsc: bankIfsc ? bankIfsc.trim().toUpperCase() : null,
+        bankAccountName: bankAccountName ? bankAccountName.trim() : null,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        profileImage: true,
+        role: true,
+        isVerified: true,
+        bankAccountNumber: true,
+        bankIfsc: true,
+        bankAccountName: true,
+      },
+    });
+
+    return {
+      message: "Bank details updated successfully",
       user,
     };
   }

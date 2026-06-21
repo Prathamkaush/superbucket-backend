@@ -26,6 +26,8 @@ import {AddressesModule} from "./addresses/addresses.module"
 import { HomepageModule } from './homepage/homepage.module';
 import { AttributesModule } from './attributes/attributes.module';
 import { VendorModule } from './vendor/vendor.module';
+import { PropertiesModule } from './properties/properties.module';
+
 
 
 @Module({
@@ -62,6 +64,7 @@ import { VendorModule } from './vendor/vendor.module';
     VendorModule,
     ContactModule,
     PaymentsModule,
+    PropertiesModule,
   ],
 })
 export class AppModule {}
