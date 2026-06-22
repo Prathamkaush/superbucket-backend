@@ -27,6 +27,7 @@ import { HomepageModule } from './homepage/homepage.module';
 import { AttributesModule } from './attributes/attributes.module';
 import { VendorModule } from './vendor/vendor.module';
 import { PropertiesModule } from './properties/properties.module';
+import { ServicesMarketplaceModule } from './services-marketplace/services-marketplace.module';
 
 
 
@@ -65,6 +66,7 @@ import { PropertiesModule } from './properties/properties.module';
     ContactModule,
     PaymentsModule,
     PropertiesModule,
+    ServicesMarketplaceModule,
   ],
 })
 export class AppModule {}

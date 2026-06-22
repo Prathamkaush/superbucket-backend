@@ -39,6 +39,23 @@ enum ReviewStatus {
   REJECTED
 }
 
+enum ServiceProviderStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum ServiceBookingStatus {
+  PENDING
+  ACCEPTED
+  EN_ROUTE
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  REJECTED
+}
+
 enum DietaryType {
   UNSPECIFIED
   VEGETARIAN
@@ -72,6 +89,119 @@ model User {
 
   properties    Property[]
   propertyLeads PropertyLead[]
+
+  providerProfile         ServiceProviderProfile?
+  customerServiceBookings ServiceBooking[] @relation("ServiceCustomer")
+  providerServiceBookings ServiceBooking[] @relation("ServiceProvider")
+}
+
+// -----------------------------------------
+// LOCAL SERVICE MARKETPLACE
+// -----------------------------------------
+
+model ServiceCategory {
+  id          Int      @id @default(autoincrement())
+  name        String
+  slug        String   @unique
+  description String?  @db.Text
+  icon        String?
+  image       String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  packages  ServicePackage[]
+  providers ProviderService[]
+
+  @@index([isActive, sortOrder])
+}
+
+model ServicePackage {
+  id                   Int      @id @default(autoincrement())
+  categoryId           Int
+  name                 String
+  description          String?  @db.Text
+  price                Decimal  @db.Decimal(10, 2)
+  durationMinutes      Int
+  platformFeePercent   Decimal  @default(20) @db.Decimal(5, 2)
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  category ServiceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  bookings ServiceBooking[]
+
+  @@index([categoryId, isActive])
+}
+
+model ServiceProviderProfile {
+  id             Int                   @id @default(autoincrement())
+  userId         Int                   @unique
+  status         ServiceProviderStatus @default(PENDING)
+  isOnline       Boolean               @default(false)
+  experienceYears Int                  @default(0)
+  bio            String?               @db.Text
+  city           String?
+  serviceRadiusKm Int                  @default(10)
+  rejectionReason String?
+  approvedAt     DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  services ProviderService[]
+
+  @@index([status, isOnline])
+  @@index([city])
+}
+
+model ProviderService {
+  providerId Int
+  categoryId Int
+  createdAt  DateTime @default(now())
+
+  provider ServiceProviderProfile @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  category ServiceCategory        @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([providerId, categoryId])
+  @@index([categoryId])
+}
+
+model ServiceBooking {
+  id                 Int                  @id @default(autoincrement())
+  bookingNumber      String               @unique
+  customerId         Int
+  providerId         Int?
+  packageId          Int
+  status             ServiceBookingStatus @default(PENDING)
+  scheduledAt        DateTime
+  address             Json
+  customerNote        String?              @db.Text
+  cancellationReason String?
+  serviceName         String
+  categoryName        String
+  price               Decimal              @db.Decimal(10, 2)
+  platformFee         Decimal              @db.Decimal(10, 2)
+  providerEarning     Decimal              @db.Decimal(10, 2)
+  completionOtp       String
+  acceptedAt          DateTime?
+  startedAt           DateTime?
+  completedAt         DateTime?
+  cancelledAt         DateTime?
+  rating              Int?
+  review              String?              @db.Text
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  customer User            @relation("ServiceCustomer", fields: [customerId], references: [id], onDelete: Cascade)
+  provider User?           @relation("ServiceProvider", fields: [providerId], references: [id], onDelete: SetNull)
+  package  ServicePackage  @relation(fields: [packageId], references: [id])
+
+  @@index([customerId, createdAt])
+  @@index([providerId, status])
+  @@index([packageId, status])
+  @@index([status, scheduledAt])
 }
 
 // -----------------------------------------
@@ -926,4 +1056,3 @@ model PropertyLead {
   @@index([propertyId])
   @@index([userId])
 }
-
