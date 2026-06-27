@@ -15,7 +15,7 @@ import { OrdersService } from "./orders.service";
 import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
 import { UpdateOrderStatusDto } from "./dto/update-order-status.dto";
 import {PreviewOrderDto} from "./dto/preview-order.dto"
-import { AdminGuard } from "../auth/admin.guard";
+import { AdminOrPickerGuard } from "../auth/admin.guard";
 
 // ✅ Swagger imports
 import {
@@ -84,7 +84,7 @@ export class OrdersController {
   @ApiBearerAuth("JWT-auth")
   @ApiUnauthorizedResponse({ description: "Unauthorized" })
   @ApiForbiddenResponse({ description: "Admin access required" })
-  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseGuards(JwtAuthGuard, AdminOrPickerGuard)
   @Get()
   getAll(@Query() query: any) {
     return this.ordersService.getAll(query);
@@ -99,7 +99,7 @@ export class OrdersController {
   @ApiBadRequestResponse({ description: "Invalid order id" })
   @ApiUnauthorizedResponse({ description: "Unauthorized" })
   @ApiForbiddenResponse({ description: "Admin access required" })
-  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseGuards(JwtAuthGuard, AdminOrPickerGuard)
   @Get(":id")
   getOne(@Param("id") id: string) {
     const orderId = Number(id);
@@ -120,18 +120,19 @@ export class OrdersController {
   @ApiUnauthorizedResponse({ description: "Unauthorized" })
   @ApiForbiddenResponse({ description: "Admin access required" })
   @ApiBadRequestResponse({ description: "Invalid order id" })
-  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseGuards(JwtAuthGuard, AdminOrPickerGuard)
   @Put(":id/status")
   updateStatus(
     @Param("id") id: string,
-    @Body() dto: UpdateOrderStatusDto
+    @Body() dto: UpdateOrderStatusDto,
+    @Req() req: any
   ) {
     const orderId = Number(id);
     if (isNaN(orderId)) {
       throw new BadRequestException("Invalid order id");
     }
 
-    return this.ordersService.updateStatus(orderId, dto.status);
+    return this.ordersService.updateStatus(orderId, dto.status, req.user);
   }
 
   // ================= USER ACTIONS =================

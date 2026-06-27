@@ -37,6 +37,7 @@ export class PropertiesService {
       data: {
         title: dto.title,
         address: dto.address,
+        pincode: dto.pincode,
         mode: dto.mode,
         category: dto.category,
         price: dto.price,
@@ -228,6 +229,7 @@ export class PropertiesService {
     category?: PropertyCategory;
     mode?: PropertyMode;
     search?: string;
+    pincode?: string;
     page?: number;
     limit?: number;
   }) {
@@ -252,6 +254,13 @@ export class PropertiesService {
         { title: { contains: query.search } },
         { address: { contains: query.search } },
       ];
+    }
+
+    // PIN codes sharing the first three digits belong to the same postal
+    // sorting district. This is a useful MVP approximation until listings
+    // store latitude/longitude and can be sorted by real distance.
+    if (/^\d{6}$/.test(query.pincode || "")) {
+      whereClause.pincode = { startsWith: query.pincode!.slice(0, 3) };
     }
 
     const [total, properties] = await Promise.all([

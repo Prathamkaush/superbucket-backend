@@ -23,7 +23,7 @@ import { FileFieldsInterceptor } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
 import { extname, join } from "path";
 import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
-import { AdminGuard } from "../auth/admin.guard";
+import { AdminGuard, AdminOrSubAdminGuard } from "../auth/admin.guard";
 import { UpdateProductSeoDto } from "./dto/update-product-seo.dto";
 
 import {
@@ -155,7 +155,7 @@ export class ProductsController {
   // ================= UPDATE STOCK =================
   @ApiBearerAuth("JWT-auth")
   @ApiOperation({ summary: "Update product stock (Admin)" })
-  @UseGuards(JwtAuthGuard, AdminGuard)
+  @UseGuards(JwtAuthGuard, AdminOrSubAdminGuard)
   @Patch(":id/stock")
   updateStock(
     @Param("id", ParseIntPipe) id: number,

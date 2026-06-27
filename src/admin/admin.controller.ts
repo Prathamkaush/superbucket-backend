@@ -1,7 +1,7 @@
-import { Controller, Get, UseGuards, Query ,Param, ParseIntPipe, NotFoundException } from "@nestjs/common";
+import { Body, Controller, Get, Post, Req, UseGuards, Query ,Param, ParseIntPipe, NotFoundException } from "@nestjs/common";
 import { AdminService } from "./admin.service";
 import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
-import { AdminGuard } from "../auth/admin.guard";
+import { AdminGuard, AdminOrSubAdminGuard } from "../auth/admin.guard";
 import {
   ApiTags,
   ApiBearerAuth,
@@ -9,10 +9,11 @@ import {
   ApiQuery,
 } from "@nestjs/swagger";
 import { PrismaService } from "../prisma/prisma.service";
+import { UserRole } from "@prisma/client";
 
 @ApiTags("Admin")
 @ApiBearerAuth("JWT-auth")
-@UseGuards(JwtAuthGuard, AdminGuard)
+@UseGuards(JwtAuthGuard)
 @Controller("admin")
 export class AdminController {
   constructor(private adminService: AdminService,
@@ -24,6 +25,7 @@ export class AdminController {
     description: "Returns total users, orders, revenue, products, etc.",
   })
   @Get("stats")
+  @UseGuards(AdminGuard)
   getStats() {
     return this.adminService.getDashboardStats();
   }
@@ -33,8 +35,30 @@ export class AdminController {
     description: "Returns analytics data for charts (orders, revenue, trends)",
   })
   @Get("charts")
+  @UseGuards(AdminGuard)
   getCharts() {
     return this.adminService.getChartData();
+  }
+
+  @Post("staff")
+  @UseGuards(AdminOrSubAdminGuard)
+  createStaff(
+    @Req() req: any,
+    @Body() body: { name: string; email: string; phone?: string; password: string; role: UserRole },
+  ) {
+    return this.adminService.createStaff(req.user, body);
+  }
+
+  @Get("staff")
+  @UseGuards(AdminOrSubAdminGuard)
+  getStaff(@Req() req: any, @Query("role") role?: UserRole) {
+    return this.adminService.getStaff(req.user, role);
+  }
+
+  @Get("reports/pickers")
+  @UseGuards(AdminOrSubAdminGuard)
+  getPickerReports(@Query("month") month?: string) {
+    return this.adminService.getPickerMonthlyReport(month);
   }
 
   @ApiOperation({
@@ -58,6 +82,7 @@ export class AdminController {
     example: "7d",
   })
   @Get("users")
+  @UseGuards(AdminGuard)
   getUsers(
     @Query("page") page = "1",
     @Query("limit") limit = "10",
@@ -79,6 +104,7 @@ export class AdminController {
     );
   }
   @Get("orders/:id")
+  @UseGuards(AdminGuard)
 async getOrderById(
   @Param("id", ParseIntPipe) id: number
 ) {

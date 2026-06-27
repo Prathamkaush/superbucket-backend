@@ -63,6 +63,7 @@ export class PropertiesController {
   @ApiQuery({ name: "category", required: false, enum: PropertyCategory })
   @ApiQuery({ name: "mode", required: false, enum: PropertyMode })
   @ApiQuery({ name: "search", required: false, type: String })
+  @ApiQuery({ name: "pincode", required: false, type: String })
   @ApiQuery({ name: "page", required: false, type: Number })
   @ApiQuery({ name: "limit", required: false, type: Number })
   @Get()
@@ -70,6 +71,7 @@ export class PropertiesController {
     @Query("category") category?: PropertyCategory,
     @Query("mode") mode?: PropertyMode,
     @Query("search") search?: string,
+    @Query("pincode") pincode?: string,
     @Query("page") page?: number,
     @Query("limit") limit?: number
   ) {
@@ -77,6 +79,7 @@ export class PropertiesController {
       category,
       mode,
       search,
+      pincode,
       page,
       limit,
     });

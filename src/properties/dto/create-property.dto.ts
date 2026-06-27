@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsEnum, IsNumber, IsOptional } from "class-validator";
+import { IsString, IsNotEmpty, IsEnum, IsNumber, IsOptional, Matches } from "class-validator";
 import { PropertyMode, PropertyCategory, PropertyFurnished } from "@prisma/client";
 
 export class CreatePropertyDto {
@@ -9,6 +9,10 @@ export class CreatePropertyDto {
   @IsString()
   @IsNotEmpty()
   address: string;
+
+  @IsString()
+  @Matches(/^\d{6}$/, { message: "pincode must be a valid 6-digit PIN code" })
+  pincode: string;
 
   @IsEnum(PropertyMode)
   @IsNotEmpty()

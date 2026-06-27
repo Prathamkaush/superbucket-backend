@@ -1,10 +1,141 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { Prisma } from "@prisma/client";
+import { Prisma, UserRole } from "@prisma/client";
+import * as bcrypt from "bcrypt";
 
 @Injectable()
 export class AdminService {
   constructor(private prisma: PrismaService) {}
+
+  private normalizeEmail(email: string) {
+    const normalized = String(email || "").trim().toLowerCase();
+    if (!normalized || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+      throw new BadRequestException("Valid email is required");
+    }
+    return normalized;
+  }
+
+  async createStaff(
+    actor: { id: number; role: UserRole },
+    body: { name: string; email: string; phone?: string; password: string; role: UserRole },
+  ) {
+    const role = body.role;
+    if (!([UserRole.SUB_ADMIN, UserRole.PICKER] as UserRole[]).includes(role)) {
+      throw new BadRequestException("Only SUB_ADMIN or PICKER staff can be created");
+    }
+
+    if (role === UserRole.SUB_ADMIN && actor.role !== UserRole.ADMIN) {
+      throw new ForbiddenException("Only admin can create sub-admins");
+    }
+
+    if (role === UserRole.PICKER && !([UserRole.ADMIN, UserRole.SUB_ADMIN] as UserRole[]).includes(actor.role)) {
+      throw new ForbiddenException("Only admin or sub-admin can create pickers");
+    }
+
+    const name = String(body.name || "").trim();
+    const email = this.normalizeEmail(body.email);
+    const password = String(body.password || "");
+
+    if (!name) throw new BadRequestException("Name is required");
+    if (password.length < 6) throw new BadRequestException("Password must be at least 6 characters");
+
+    const existing = await this.prisma.user.findUnique({ where: { email } });
+    if (existing) throw new BadRequestException("Email already exists");
+
+    const staff = await this.prisma.user.create({
+      data: {
+        name,
+        email,
+        phone: body.phone?.trim() || null,
+        passwordHash: await bcrypt.hash(password, 10),
+        isVerified: true,
+        role,
+        createdById: actor.id,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    return staff;
+  }
+
+  async getStaff(actor: { id: number; role: UserRole }, role?: UserRole) {
+    const where: Prisma.UserWhereInput = {
+      role: role && ([UserRole.SUB_ADMIN, UserRole.PICKER] as UserRole[]).includes(role)
+        ? role
+        : { in: [UserRole.SUB_ADMIN, UserRole.PICKER] },
+    };
+
+    if (actor.role === UserRole.SUB_ADMIN) {
+      where.OR = [
+        { createdById: actor.id },
+        { id: actor.id },
+      ];
+      where.role = UserRole.PICKER;
+    }
+
+    return this.prisma.user.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        role: true,
+        createdAt: true,
+        createdBy: { select: { id: true, name: true, email: true } },
+      },
+    });
+  }
+
+  async getPickerMonthlyReport(month?: string) {
+    const base = month && /^\d{4}-\d{2}$/.test(month) ? `${month}-01` : new Date().toISOString().slice(0, 7) + "-01";
+    const from = new Date(`${base}T00:00:00.000Z`);
+    const to = new Date(from);
+    to.setUTCMonth(to.getUTCMonth() + 1);
+
+    const pickers = await this.prisma.user.findMany({
+      where: { role: UserRole.PICKER },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        createdBy: { select: { id: true, name: true, email: true } },
+        _count: {
+          select: {
+            acceptedOrders: { where: { acceptedAt: { gte: from, lt: to } } },
+            dispatchedOrders: { where: { dispatchedAt: { gte: from, lt: to } } },
+            fulfilledOrders: { where: { fulfilledAt: { gte: from, lt: to } } },
+          },
+        },
+      },
+    });
+
+    return {
+      month: from.toISOString().slice(0, 7),
+      from,
+      to,
+      pickers: pickers
+        .map((picker) => ({
+          id: picker.id,
+          name: picker.name,
+          email: picker.email,
+          createdBy: picker.createdBy,
+          accepted: picker._count.acceptedOrders,
+          dispatched: picker._count.dispatchedOrders,
+          fulfilled: picker._count.fulfilledOrders,
+          score: picker._count.fulfilledOrders,
+        }))
+        .sort((a, b) => b.fulfilled - a.fulfilled),
+    };
+  }
 
   async getDashboardStats() {
   const today = new Date();

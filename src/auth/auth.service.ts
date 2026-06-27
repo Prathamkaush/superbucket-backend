@@ -363,7 +363,10 @@ export class AuthService {
   async validateAdmin(email: string, password: string) {
     const admin = await this.prisma.user.findUnique({ where: { email } });
 
-    if (!admin || admin.role !== UserRole.ADMIN) {
+    if (
+      !admin ||
+      !([UserRole.ADMIN, UserRole.SUB_ADMIN, UserRole.PICKER] as UserRole[]).includes(admin.role)
+    ) {
       throw new UnauthorizedException("Invalid admin credentials");
     }
 

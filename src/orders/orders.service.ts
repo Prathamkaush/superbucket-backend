@@ -2,9 +2,10 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { Prisma , OrderStatus } from "@prisma/client";
+import { Prisma , OrderStatus, UserRole } from "@prisma/client";
 import { getDelhiveryRate } from "../delivery/delhivery-rates.service";
 import { CouponsService } from "../coupons/coupons.service";
 
@@ -21,11 +22,16 @@ export class OrdersService {
   // ================= ADMIN =================
 
   async getAll(query: any) {
-    const { page = 1, limit = 10, status, minAmount, maxAmount } = query;
+    const { page = 1, limit = 10, status, minAmount, maxAmount, fromDate, toDate } = query;
     const skip = (page - 1) * limit;
 
     const where: any = {};
     if (status) where.status = status;
+    if (fromDate || toDate) {
+      where.createdAt = {};
+      if (fromDate) where.createdAt.gte = new Date(fromDate);
+      if (toDate) where.createdAt.lte = new Date(toDate);
+    }
 
     if (minAmount || maxAmount) {
       where.finalAmount = {};
@@ -40,6 +46,9 @@ export class OrdersService {
         take: Number(limit),
         include: {
           user: true,
+          acceptedBy: { select: { id: true, name: true, email: true } },
+          dispatchedBy: { select: { id: true, name: true, email: true } },
+          fulfilledBy: { select: { id: true, name: true, email: true } },
           items: { include: { product: true, variant: true, size: true } },
         },
         orderBy: { createdAt: "desc" },
@@ -58,7 +67,13 @@ export class OrdersService {
   async getOne(id: number) {
     const order = await this.prisma.order.findUnique({
       where: { id },
-      include: { user: true, items: { include: { product: true, variant: true, size: true } } },
+      include: {
+        user: true,
+        acceptedBy: { select: { id: true, name: true, email: true } },
+        dispatchedBy: { select: { id: true, name: true, email: true } },
+        fulfilledBy: { select: { id: true, name: true, email: true } },
+        items: { include: { product: true, variant: true, size: true } },
+      },
     });
 
     if (!order) throw new NotFoundException("Order not found");
@@ -66,19 +81,39 @@ export class OrdersService {
   }
 
   // ================= ADMIN STATUS UPDATE =================
- async updateStatus(orderId: number, status: OrderStatus) {
+ async updateStatus(orderId: number, status: OrderStatus, actor?: { id: number; role: UserRole }) {
+  const existing = await this.prisma.order.findUnique({ where: { id: orderId } });
+  if (!existing) throw new NotFoundException("Order not found");
+
+  if (actor?.role === UserRole.PICKER) {
+    const allowed =
+      (existing.status === OrderStatus.PENDING && status === OrderStatus.CONFIRMED) ||
+      (existing.status === OrderStatus.CONFIRMED && status === OrderStatus.SHIPPED) ||
+      (existing.status === OrderStatus.SHIPPED && status === OrderStatus.DELIVERED);
+
+    if (!allowed) {
+      throw new ForbiddenException("Picker can only accept, dispatch, and fulfill orders in sequence");
+    }
+  }
+
   const data: any = { status };
 
   if (status === OrderStatus.CONFIRMED) {
     data.confirmedAt = new Date();
+    data.acceptedAt = new Date();
+    if (actor?.id) data.acceptedById = actor.id;
   }
 
   if (status === OrderStatus.SHIPPED) {
     data.shippedAt = new Date();
+    data.dispatchedAt = new Date();
+    if (actor?.id) data.dispatchedById = actor.id;
   }
 
   if (status === OrderStatus.DELIVERED) {
     data.deliveredAt = new Date();
+    data.fulfilledAt = new Date();
+    if (actor?.id) data.fulfilledById = actor.id;
   }
 
   return this.prisma.order.update({
