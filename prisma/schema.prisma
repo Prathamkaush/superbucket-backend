@@ -22,6 +22,7 @@ enum UserRole {
   ADMIN
   SUB_ADMIN
   PICKER
+  DELIVERY_PARTNER
 }
 
 enum ProductStatus {
@@ -83,12 +84,16 @@ model User {
   createdById Int?
   createdBy   User?  @relation("StaffCreator", fields: [createdById], references: [id], onDelete: SetNull)
   createdStaff User[] @relation("StaffCreator")
+  staffShopId Int?
+  staffShop   Shop? @relation("ShopStaff", fields: [staffShopId], references: [id], onDelete: SetNull)
 
   cartItems CartItem[]
   orders    Order[]
   acceptedOrders Order[] @relation("OrderAcceptedBy")
   dispatchedOrders Order[] @relation("OrderDispatchedBy")
   fulfilledOrders Order[] @relation("OrderFulfilledBy")
+  deliveryOrders Order[] @relation("OrderDeliveryPartner")
+  ownedShop Shop? @relation("ShopOwner")
   reviews   Review[]
   feedbacks Feedback[]
   contacts  Contact[]
@@ -101,6 +106,37 @@ model User {
   providerProfile         ServiceProviderProfile?
   customerServiceBookings ServiceBooking[] @relation("ServiceCustomer")
   providerServiceBookings ServiceBooking[] @relation("ServiceProvider")
+
+  @@index([createdById])
+  @@index([staffShopId])
+}
+
+model Shop {
+  id Int @id @default(autoincrement())
+
+  name      String
+  phone     String?
+  address   String
+  city      String
+  state     String
+  pincode   String
+  latitude  Decimal? @db.Decimal(10, 7)
+  longitude Decimal? @db.Decimal(10, 7)
+  radiusKm  Int      @default(5)
+  isActive  Boolean  @default(true)
+
+  ownerId Int @unique
+  owner   User @relation("ShopOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  staff  User[]  @relation("ShopStaff")
+  orders Order[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([pincode])
+  @@index([isActive])
+  @@index([latitude, longitude])
 }
 
 // -----------------------------------------
@@ -647,6 +683,16 @@ model Order {
   acceptedAt       DateTime?
   dispatchedAt     DateTime?
   fulfilledAt      DateTime?
+  deliveryPartnerName  String?
+  deliveryPartnerPhone String?
+  deliveryLatitude     Decimal? @db.Decimal(10, 7)
+  deliveryLongitude    Decimal? @db.Decimal(10, 7)
+  deliveryLocationUpdatedAt DateTime?
+  deliveryOtp          String?
+  deliveryOtpVerifiedAt DateTime?
+  deliveryMode         String? @default("INSTANT")
+  scheduledDeliveryAt  DateTime?
+  deliverySlotLabel    String?
 
   couponCode     String?
   couponDiscount Decimal? @db.Decimal(10, 2)
@@ -664,12 +710,17 @@ model Order {
   userId Int
   user   User @relation(fields: [userId], references: [id])
 
+  shopId Int?
+  shop   Shop? @relation(fields: [shopId], references: [id], onDelete: SetNull)
+
   acceptedById   Int?
   acceptedBy     User? @relation("OrderAcceptedBy", fields: [acceptedById], references: [id], onDelete: SetNull)
   dispatchedById Int?
   dispatchedBy   User? @relation("OrderDispatchedBy", fields: [dispatchedById], references: [id], onDelete: SetNull)
   fulfilledById  Int?
   fulfilledBy    User? @relation("OrderFulfilledBy", fields: [fulfilledById], references: [id], onDelete: SetNull)
+  deliveryPartnerId Int?
+  deliveryPartner   User? @relation("OrderDeliveryPartner", fields: [deliveryPartnerId], references: [id], onDelete: SetNull)
 
   items    OrderItem[]
   reviews  Review[]
@@ -678,6 +729,8 @@ model Order {
   @@index([acceptedById])
   @@index([dispatchedById])
   @@index([fulfilledById])
+  @@index([deliveryPartnerId])
+  @@index([shopId])
 }
 
 model OrderItem {
@@ -739,6 +792,7 @@ model Settings {
   logo            String?
   currency        String?  @default("INR")
   maintenanceMode Boolean  @default(false)
+  deliverySlotTimes Json?
   updatedAt       DateTime @updatedAt
 }
 

@@ -17,11 +17,29 @@ export class AdminService {
 
   async createStaff(
     actor: { id: number; role: UserRole },
-    body: { name: string; email: string; phone?: string; password: string; role: UserRole },
+    body: {
+      name: string;
+      email: string;
+      phone?: string;
+      password: string;
+      role: UserRole;
+      shopId?: number;
+      shop?: {
+        name: string;
+        phone?: string;
+        address: string;
+        city: string;
+        state: string;
+        pincode: string;
+        latitude?: number;
+        longitude?: number;
+        radiusKm?: number;
+      };
+    },
   ) {
     const role = body.role;
-    if (!([UserRole.SUB_ADMIN, UserRole.PICKER] as UserRole[]).includes(role)) {
-      throw new BadRequestException("Only SUB_ADMIN or PICKER staff can be created");
+    if (!([UserRole.SUB_ADMIN, UserRole.PICKER, UserRole.DELIVERY_PARTNER] as UserRole[]).includes(role)) {
+      throw new BadRequestException("Only SUB_ADMIN, PICKER or DELIVERY_PARTNER staff can be created");
     }
 
     if (role === UserRole.SUB_ADMIN && actor.role !== UserRole.ADMIN) {
@@ -30,6 +48,10 @@ export class AdminService {
 
     if (role === UserRole.PICKER && !([UserRole.ADMIN, UserRole.SUB_ADMIN] as UserRole[]).includes(actor.role)) {
       throw new ForbiddenException("Only admin or sub-admin can create pickers");
+    }
+
+    if (role === UserRole.DELIVERY_PARTNER && actor.role !== UserRole.ADMIN) {
+      throw new ForbiddenException("Only admin can create delivery partners");
     }
 
     const name = String(body.name || "").trim();
@@ -42,6 +64,13 @@ export class AdminService {
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) throw new BadRequestException("Email already exists");
 
+    const staffShopId =
+      role === UserRole.PICKER
+        ? actor.role === UserRole.SUB_ADMIN
+          ? await this.getOwnedShopId(actor.id)
+          : body.shopId
+        : undefined;
+
     const staff = await this.prisma.user.create({
       data: {
         name,
@@ -51,6 +80,7 @@ export class AdminService {
         isVerified: true,
         role,
         createdById: actor.id,
+        ...(staffShopId ? { staffShopId } : {}),
       },
       select: {
         id: true,
@@ -59,17 +89,92 @@ export class AdminService {
         phone: true,
         role: true,
         createdAt: true,
+        staffShop: { select: { id: true, name: true, pincode: true } },
       },
     });
+
+    if (role === UserRole.SUB_ADMIN && body.shop) {
+      await this.createShop(actor, {
+        ...body.shop,
+        ownerId: staff.id,
+      });
+    }
 
     return staff;
   }
 
+  private async getOwnedShopId(ownerId: number) {
+    const shop = await this.prisma.shop.findFirst({
+      where: { ownerId },
+      select: { id: true },
+    });
+
+    if (!shop) {
+      throw new BadRequestException("Sub-admin must have a shop before creating pickers");
+    }
+
+    return shop.id;
+  }
+
+  async createShop(
+    actor: { id: number; role: UserRole },
+    body: {
+      ownerId: number;
+      name: string;
+      phone?: string;
+      address: string;
+      city: string;
+      state: string;
+      pincode: string;
+      latitude?: number;
+      longitude?: number;
+      radiusKm?: number;
+    },
+  ) {
+    if (actor.role !== UserRole.ADMIN) {
+      throw new ForbiddenException("Only admin can create shops");
+    }
+
+    const owner = await this.prisma.user.findUnique({ where: { id: Number(body.ownerId) } });
+    if (!owner || owner.role !== UserRole.SUB_ADMIN) {
+      throw new BadRequestException("Shop owner must be a sub-admin");
+    }
+
+    return this.prisma.shop.create({
+      data: {
+        ownerId: owner.id,
+        name: String(body.name || "").trim(),
+        phone: body.phone?.trim() || null,
+        address: String(body.address || "").trim(),
+        city: String(body.city || "").trim(),
+        state: String(body.state || "").trim(),
+        pincode: String(body.pincode || "").trim(),
+        latitude: body.latitude,
+        longitude: body.longitude,
+        radiusKm: body.radiusKm ?? 5,
+      },
+    });
+  }
+
+  async getShops(actor: { id: number; role: UserRole }) {
+    const where: Prisma.ShopWhereInput =
+      actor.role === UserRole.ADMIN ? {} : { ownerId: actor.id };
+
+    return this.prisma.shop.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      include: {
+        owner: { select: { id: true, name: true, email: true, phone: true } },
+        _count: { select: { staff: true, orders: true } },
+      },
+    });
+  }
+
   async getStaff(actor: { id: number; role: UserRole }, role?: UserRole) {
     const where: Prisma.UserWhereInput = {
-      role: role && ([UserRole.SUB_ADMIN, UserRole.PICKER] as UserRole[]).includes(role)
+      role: role && ([UserRole.SUB_ADMIN, UserRole.PICKER, UserRole.DELIVERY_PARTNER] as UserRole[]).includes(role)
         ? role
-        : { in: [UserRole.SUB_ADMIN, UserRole.PICKER] },
+        : { in: [UserRole.SUB_ADMIN, UserRole.PICKER, UserRole.DELIVERY_PARTNER] },
     };
 
     if (actor.role === UserRole.SUB_ADMIN) {
@@ -89,20 +194,61 @@ export class AdminService {
         email: true,
         phone: true,
         role: true,
+        isVerified: true,
         createdAt: true,
         createdBy: { select: { id: true, name: true, email: true } },
+        staffShop: { select: { id: true, name: true, pincode: true } },
       },
     });
   }
 
-  async getPickerMonthlyReport(month?: string) {
+  async updateDeliveryPartnerVerification(
+    actor: { id: number; role: UserRole },
+    id: number,
+    isVerified: boolean,
+  ) {
+    if (actor.role !== UserRole.ADMIN) {
+      throw new ForbiddenException("Only admin can verify delivery partners");
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true, role: true },
+    });
+
+    if (!user || user.role !== UserRole.DELIVERY_PARTNER) {
+      throw new BadRequestException("Delivery partner not found");
+    }
+
+    return this.prisma.user.update({
+      where: { id },
+      data: { isVerified: Boolean(isVerified) },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        role: true,
+        isVerified: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  async getPickerMonthlyReport(actor: { id: number; role: UserRole }, month?: string) {
     const base = month && /^\d{4}-\d{2}$/.test(month) ? `${month}-01` : new Date().toISOString().slice(0, 7) + "-01";
     const from = new Date(`${base}T00:00:00.000Z`);
     const to = new Date(from);
     to.setUTCMonth(to.getUTCMonth() + 1);
 
+    const shopId =
+      actor.role === UserRole.SUB_ADMIN ? await this.getOwnedShopId(actor.id) : undefined;
+
     const pickers = await this.prisma.user.findMany({
-      where: { role: UserRole.PICKER },
+      where: {
+        role: UserRole.PICKER,
+        ...(shopId ? { staffShopId: shopId } : {}),
+      },
       select: {
         id: true,
         name: true,

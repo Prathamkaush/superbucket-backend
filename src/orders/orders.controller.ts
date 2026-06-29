@@ -15,7 +15,7 @@ import { OrdersService } from "./orders.service";
 import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
 import { UpdateOrderStatusDto } from "./dto/update-order-status.dto";
 import {PreviewOrderDto} from "./dto/preview-order.dto"
-import { AdminOrPickerGuard } from "../auth/admin.guard";
+import { AdminStaffGuard } from "../auth/admin.guard";
 
 // ✅ Swagger imports
 import {
@@ -84,10 +84,10 @@ export class OrdersController {
   @ApiBearerAuth("JWT-auth")
   @ApiUnauthorizedResponse({ description: "Unauthorized" })
   @ApiForbiddenResponse({ description: "Admin access required" })
-  @UseGuards(JwtAuthGuard, AdminOrPickerGuard)
+  @UseGuards(JwtAuthGuard, AdminStaffGuard)
   @Get()
-  getAll(@Query() query: any) {
-    return this.ordersService.getAll(query);
+  getAll(@Query() query: any, @Req() req: any) {
+    return this.ordersService.getAll(query, req.user);
   }
 
   @ApiOperation({
@@ -99,15 +99,15 @@ export class OrdersController {
   @ApiBadRequestResponse({ description: "Invalid order id" })
   @ApiUnauthorizedResponse({ description: "Unauthorized" })
   @ApiForbiddenResponse({ description: "Admin access required" })
-  @UseGuards(JwtAuthGuard, AdminOrPickerGuard)
+  @UseGuards(JwtAuthGuard, AdminStaffGuard)
   @Get(":id")
-  getOne(@Param("id") id: string) {
+  getOne(@Param("id") id: string, @Req() req: any) {
     const orderId = Number(id);
     if (isNaN(orderId)) {
       throw new BadRequestException("Invalid order id");
     }
 
-    return this.ordersService.getOne(orderId);
+    return this.ordersService.getOne(orderId, req.user);
   }
 
   @ApiOperation({
@@ -120,7 +120,7 @@ export class OrdersController {
   @ApiUnauthorizedResponse({ description: "Unauthorized" })
   @ApiForbiddenResponse({ description: "Admin access required" })
   @ApiBadRequestResponse({ description: "Invalid order id" })
-  @UseGuards(JwtAuthGuard, AdminOrPickerGuard)
+  @UseGuards(JwtAuthGuard, AdminStaffGuard)
   @Put(":id/status")
   updateStatus(
     @Param("id") id: string,
@@ -133,6 +133,32 @@ export class OrdersController {
     }
 
     return this.ordersService.updateStatus(orderId, dto.status, req.user);
+  }
+
+  @ApiOperation({
+    summary: "Update order delivery live location",
+    description: "Staff endpoint to save the latest delivery partner location for user tracking",
+  })
+  @ApiBearerAuth("JWT-auth")
+  @UseGuards(JwtAuthGuard, AdminStaffGuard)
+  @Put(":id/delivery-location")
+  updateDeliveryLocation(
+    @Param("id") id: string,
+    @Body()
+    body: {
+      latitude: number;
+      longitude: number;
+      deliveryPartnerName?: string;
+      deliveryPartnerPhone?: string;
+    },
+    @Req() req: any
+  ) {
+    const orderId = Number(id);
+    if (isNaN(orderId)) {
+      throw new BadRequestException("Invalid order id");
+    }
+
+    return this.ordersService.updateDeliveryLocation(orderId, req.user, body);
   }
 
   // ================= USER ACTIONS =================
@@ -170,6 +196,9 @@ placeOrder(
     addressId?: number;
     paymentMethod: "COD" | "RAZORPAY";
     couponCode?: string;
+    deliveryMode?: "INSTANT" | "SCHEDULED";
+    scheduledDeliveryAt?: string;
+    deliverySlotLabel?: string;
   }
 ) {
   if (!req.user?.id) {
@@ -191,6 +220,9 @@ placeOrder(
       addressId: body.addressId,
       paymentMethod: body.paymentMethod,
       couponCode: body.couponCode,
+      deliveryMode: body.deliveryMode,
+      scheduledDeliveryAt: body.scheduledDeliveryAt,
+      deliverySlotLabel: body.deliverySlotLabel,
     }
   );
 }

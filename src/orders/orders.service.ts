@@ -8,11 +8,30 @@ import { PrismaService } from "../prisma/prisma.service";
 import { Prisma , OrderStatus, UserRole } from "@prisma/client";
 import { getDelhiveryRate } from "../delivery/delhivery-rates.service";
 import { CouponsService } from "../coupons/coupons.service";
+import { randomInt } from "crypto";
 
 function calculateOrderWeightKg(items: any[]) {
   return items.reduce((sum, item) => {
     return sum + Number(item.variant?.weightKg ?? item.product.weight) * item.quantity;
   }, 0);
+}
+
+function toNumber(value: any) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function haversineKm(fromLat: number, fromLng: number, toLat: number, toLng: number) {
+  const earthRadiusKm = 6371;
+  const dLat = ((toLat - fromLat) * Math.PI) / 180;
+  const dLng = ((toLng - fromLng) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((fromLat * Math.PI) / 180) *
+      Math.cos((toLat * Math.PI) / 180) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 @Injectable()
@@ -21,11 +40,89 @@ export class OrdersService {
 
   // ================= ADMIN =================
 
-  async getAll(query: any) {
+  private async getActorShopScope(actor?: { id: number; role: UserRole }) {
+    if (!actor || actor.role === UserRole.ADMIN) return undefined;
+
+    if (actor.role === UserRole.SUB_ADMIN) {
+      const shop = await this.prisma.shop.findFirst({
+        where: { ownerId: actor.id },
+        select: { id: true },
+      });
+      return shop?.id ?? -1;
+    }
+
+    if (actor.role === UserRole.PICKER) {
+      const picker = await this.prisma.user.findUnique({
+        where: { id: actor.id },
+        select: { staffShopId: true },
+      });
+      return picker?.staffShopId ?? undefined;
+    }
+
+    return -1;
+  }
+
+  private async findNearestShop(address: any) {
+    const pincode = String(address?.pincode || "").trim();
+    const userLat = toNumber(address?.latitude ?? address?.lat);
+    const userLng = toNumber(address?.longitude ?? address?.lng);
+
+    const shops = await this.prisma.shop.findMany({
+      where: {
+        isActive: true,
+        OR: [
+          ...(pincode ? [{ pincode }] : []),
+          ...(pincode.length >= 3 ? [{ pincode: { startsWith: pincode.slice(0, 3) } }] : []),
+          ...(userLat !== null && userLng !== null
+            ? [{ latitude: { not: null }, longitude: { not: null } }]
+            : []),
+        ],
+      },
+      select: {
+        id: true,
+        name: true,
+        pincode: true,
+        latitude: true,
+        longitude: true,
+        radiusKm: true,
+      },
+    });
+
+    if (!shops.length) return null;
+
+    if (userLat !== null && userLng !== null) {
+      const nearby = shops
+        .map((shop) => {
+          const shopLat = toNumber(shop.latitude);
+          const shopLng = toNumber(shop.longitude);
+          if (shopLat === null || shopLng === null) return null;
+          return {
+            ...shop,
+            distanceKm: haversineKm(userLat, userLng, shopLat, shopLng),
+          };
+        })
+        .filter((shop): shop is NonNullable<typeof shop> => Boolean(shop))
+        .filter((shop) => shop.distanceKm <= shop.radiusKm)
+        .sort((a, b) => a.distanceKm - b.distanceKm);
+
+      if (nearby.length) return nearby[0];
+    }
+
+    const exactPincode = shops.find((shop) => shop.pincode === pincode);
+    return exactPincode ?? shops[0];
+  }
+
+  async getAll(query: any, actor?: { id: number; role: UserRole }) {
     const { page = 1, limit = 10, status, minAmount, maxAmount, fromDate, toDate } = query;
     const skip = (page - 1) * limit;
 
     const where: any = {};
+    const shopId = await this.getActorShopScope(actor);
+    if (actor?.role === UserRole.PICKER && shopId !== undefined) {
+      where.OR = [{ shopId }, { shopId: null }];
+    } else if (shopId !== undefined) {
+      where.shopId = shopId;
+    }
     if (status) where.status = status;
     if (fromDate || toDate) {
       where.createdAt = {};
@@ -49,6 +146,7 @@ export class OrdersService {
           acceptedBy: { select: { id: true, name: true, email: true } },
           dispatchedBy: { select: { id: true, name: true, email: true } },
           fulfilledBy: { select: { id: true, name: true, email: true } },
+          shop: { select: { id: true, name: true, pincode: true } },
           items: { include: { product: true, variant: true, size: true } },
         },
         orderBy: { createdAt: "desc" },
@@ -64,7 +162,8 @@ export class OrdersService {
     };
   }
 
-  async getOne(id: number) {
+  async getOne(id: number, actor?: { id: number; role: UserRole }) {
+    const shopId = await this.getActorShopScope(actor);
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: {
@@ -72,11 +171,19 @@ export class OrdersService {
         acceptedBy: { select: { id: true, name: true, email: true } },
         dispatchedBy: { select: { id: true, name: true, email: true } },
         fulfilledBy: { select: { id: true, name: true, email: true } },
+        shop: { select: { id: true, name: true, pincode: true, ownerId: true } },
         items: { include: { product: true, variant: true, size: true } },
       },
     });
 
     if (!order) throw new NotFoundException("Order not found");
+    if (
+      shopId !== undefined &&
+      order.shopId !== shopId &&
+      !(actor?.role === UserRole.PICKER && order.shopId === null)
+    ) {
+      throw new ForbiddenException("You can access only your shop orders");
+    }
     return order;
   }
 
@@ -84,15 +191,39 @@ export class OrdersService {
  async updateStatus(orderId: number, status: OrderStatus, actor?: { id: number; role: UserRole }) {
   const existing = await this.prisma.order.findUnique({ where: { id: orderId } });
   if (!existing) throw new NotFoundException("Order not found");
+  const shopId = await this.getActorShopScope(actor);
+  if (
+    shopId !== undefined &&
+    existing.shopId !== shopId &&
+    !(actor?.role === UserRole.PICKER && existing.shopId === null)
+  ) {
+    throw new ForbiddenException("You can update only your shop orders");
+  }
 
   if (actor?.role === UserRole.PICKER) {
+    if (
+      status === OrderStatus.SHIPPED &&
+      existing.deliveryMode === "SCHEDULED" &&
+      existing.scheduledDeliveryAt &&
+      existing.scheduledDeliveryAt.getTime() > Date.now()
+    ) {
+      throw new ForbiddenException("Scheduled orders can be dispatched only at the selected delivery slot");
+    }
+
     const allowed =
       (existing.status === OrderStatus.PENDING && status === OrderStatus.CONFIRMED) ||
-      (existing.status === OrderStatus.CONFIRMED && status === OrderStatus.SHIPPED) ||
-      (existing.status === OrderStatus.SHIPPED && status === OrderStatus.DELIVERED);
+      (existing.status === OrderStatus.CONFIRMED && status === OrderStatus.SHIPPED);
 
     if (!allowed) {
       throw new ForbiddenException("Picker can only accept, dispatch, and fulfill orders in sequence");
+    }
+
+    if (
+      existing.acceptedById &&
+      existing.acceptedById !== actor.id &&
+      status === OrderStatus.SHIPPED
+    ) {
+      throw new ForbiddenException("Only the picker who accepted this order can dispatch or fulfill it");
     }
   }
 
@@ -102,6 +233,9 @@ export class OrdersService {
     data.confirmedAt = new Date();
     data.acceptedAt = new Date();
     if (actor?.id) data.acceptedById = actor.id;
+    if (actor?.role === UserRole.PICKER && existing.shopId === null && shopId !== undefined) {
+      data.shopId = shopId;
+    }
   }
 
   if (status === OrderStatus.SHIPPED) {
@@ -119,6 +253,62 @@ export class OrdersService {
   return this.prisma.order.update({
     where: { id: orderId },
     data,
+    include: {
+      acceptedBy: { select: { id: true, name: true, email: true } },
+      dispatchedBy: { select: { id: true, name: true, email: true } },
+      fulfilledBy: { select: { id: true, name: true, email: true } },
+      shop: { select: { id: true, name: true, pincode: true } },
+    },
+  });
+}
+
+async updateDeliveryLocation(
+  orderId: number,
+  actor: { id: number; role: UserRole },
+  body: {
+    latitude: number;
+    longitude: number;
+    deliveryPartnerName?: string;
+    deliveryPartnerPhone?: string;
+  }
+) {
+  const existing = await this.prisma.order.findUnique({ where: { id: orderId } });
+  if (!existing) throw new NotFoundException("Order not found");
+
+  const shopId = await this.getActorShopScope(actor);
+  if (shopId !== undefined && existing.shopId !== shopId) {
+    throw new ForbiddenException("You can update only your shop orders");
+  }
+
+  const latitude = toNumber(body.latitude);
+  const longitude = toNumber(body.longitude);
+
+  if (latitude === null || longitude === null || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+    throw new BadRequestException("Valid latitude and longitude are required");
+  }
+
+  return this.prisma.order.update({
+    where: { id: orderId },
+    data: {
+      deliveryLatitude: latitude,
+      deliveryLongitude: longitude,
+      deliveryLocationUpdatedAt: new Date(),
+      ...(body.deliveryPartnerName !== undefined && {
+        deliveryPartnerName: String(body.deliveryPartnerName || "").trim() || null,
+      }),
+      ...(body.deliveryPartnerPhone !== undefined && {
+        deliveryPartnerPhone: String(body.deliveryPartnerPhone || "").trim() || null,
+      }),
+    },
+    select: {
+      id: true,
+      status: true,
+      deliveryPartnerName: true,
+      deliveryPartnerPhone: true,
+      deliveryLatitude: true,
+      deliveryLongitude: true,
+      deliveryLocationUpdatedAt: true,
+    },
   });
 }
 async resolveAddress(
@@ -160,9 +350,30 @@ async createOrder(
     addressId?: number;
     paymentMethod: "COD" | "RAZORPAY";
     couponCode?: string;
+    deliveryMode?: "INSTANT" | "SCHEDULED";
+    scheduledDeliveryAt?: string | Date;
+    deliverySlotLabel?: string;
   }
 ) {
   const { paymentMethod, couponCode } = payload;
+  const deliveryMode = payload.deliveryMode === "SCHEDULED" ? "SCHEDULED" : "INSTANT";
+  const scheduledDeliveryAt =
+    deliveryMode === "SCHEDULED" && payload.scheduledDeliveryAt
+      ? new Date(payload.scheduledDeliveryAt)
+      : null;
+
+  if (
+    deliveryMode === "SCHEDULED" &&
+    (!scheduledDeliveryAt || Number.isNaN(scheduledDeliveryAt.getTime()))
+  ) {
+    throw new BadRequestException("Valid scheduled delivery slot is required");
+  }
+
+  const deliverySlotLabel =
+    deliveryMode === "SCHEDULED"
+      ? String(payload.deliverySlotLabel || "").trim() ||
+        scheduledDeliveryAt?.toLocaleString("en-IN")
+      : "Instant delivery";
 
   // 🔑 Resolve address FIRST
   const address = await this.resolveAddress(
@@ -170,6 +381,7 @@ async createOrder(
     payload.address,
     payload.addressId
   );
+  const assignedShop = await this.findNearestShop(address);
 
   const cart = await this.prisma.cartItem.findMany({
     where: { userId },
@@ -248,6 +460,7 @@ async createOrder(
   }
 
   const payable = Math.max(0, subtotal - couponDiscount);
+  const deliveryOtp = randomInt(1000, 10000).toString();
 
   /* ================= TRANSACTION ================= */
   const order = await this.prisma.$transaction(async (tx) => {
@@ -263,7 +476,13 @@ async createOrder(
         couponDiscount,
         finalAmount: payable,
         totalWeight: chargeableWeight,
+        deliveryOtp,
+        deliveryOtpVerifiedAt: null,
+        deliveryMode,
+        scheduledDeliveryAt,
+        deliverySlotLabel,
         status: OrderStatus.PENDING,
+        shopId: assignedShop?.id ?? null,
 
         // ✅ SNAPSHOT address (Amazon-style)
         address,
@@ -339,11 +558,23 @@ async createOrder(
 
   return {
     orderId: order.id,
+    shop: assignedShop
+      ? {
+          id: assignedShop.id,
+          name: assignedShop.name,
+          pincode: assignedShop.pincode,
+          distanceKm: "distanceKm" in assignedShop ? assignedShop.distanceKm : null,
+        }
+      : null,
     itemsTotal,
     gstTotal,
     shippingCharge,
     couponDiscount,
     finalAmount: payable,
+    deliveryOtp,
+    deliveryMode,
+    scheduledDeliveryAt,
+    deliverySlotLabel,
   };
 }
 
@@ -374,6 +605,23 @@ async getMyOrders(userId: number, page = 1, limit = 5) {
 
         courier: true,
         trackingId: true,
+        deliveryPartnerName: true,
+        deliveryPartnerPhone: true,
+        deliveryLatitude: true,
+        deliveryLongitude: true,
+        deliveryLocationUpdatedAt: true,
+        deliveryOtp: true,
+        deliveryOtpVerifiedAt: true,
+        deliveryMode: true,
+        scheduledDeliveryAt: true,
+        deliverySlotLabel: true,
+        shop: {
+          select: {
+            id: true,
+            name: true,
+            pincode: true,
+          },
+        },
 
         items: {
           select: {
@@ -455,6 +703,25 @@ async getMyOrderById(orderId: number, userId: number) {
       trackingId: true,
       shippedAt: true,
       deliveredAt: true,
+      deliveryPartnerName: true,
+      deliveryPartnerPhone: true,
+      deliveryLatitude: true,
+      deliveryLongitude: true,
+      deliveryLocationUpdatedAt: true,
+      deliveryOtp: true,
+      deliveryOtpVerifiedAt: true,
+      deliveryMode: true,
+      scheduledDeliveryAt: true,
+      deliverySlotLabel: true,
+      shop: {
+        select: {
+          id: true,
+          name: true,
+          pincode: true,
+          latitude: true,
+          longitude: true,
+        },
+      },
 
       address: true,
 

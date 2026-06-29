@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Req, UseGuards, Query ,Param, ParseIntPipe, NotFoundException } from "@nestjs/common";
+import { Body, Controller, Get, Patch, Post, Req, UseGuards, Query ,Param, ParseIntPipe, NotFoundException } from "@nestjs/common";
 import { AdminService } from "./admin.service";
 import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
 import { AdminGuard, AdminOrSubAdminGuard } from "../auth/admin.guard";
@@ -44,9 +44,55 @@ export class AdminController {
   @UseGuards(AdminOrSubAdminGuard)
   createStaff(
     @Req() req: any,
-    @Body() body: { name: string; email: string; phone?: string; password: string; role: UserRole },
+    @Body()
+    body: {
+      name: string;
+      email: string;
+      phone?: string;
+      password: string;
+      role: UserRole;
+      shopId?: number;
+      shop?: {
+        name: string;
+        phone?: string;
+        address: string;
+        city: string;
+        state: string;
+        pincode: string;
+        latitude?: number;
+        longitude?: number;
+        radiusKm?: number;
+      };
+    },
   ) {
     return this.adminService.createStaff(req.user, body);
+  }
+
+  @Post("shops")
+  @UseGuards(AdminGuard)
+  createShop(
+    @Req() req: any,
+    @Body()
+    body: {
+      ownerId: number;
+      name: string;
+      phone?: string;
+      address: string;
+      city: string;
+      state: string;
+      pincode: string;
+      latitude?: number;
+      longitude?: number;
+      radiusKm?: number;
+    },
+  ) {
+    return this.adminService.createShop(req.user, body);
+  }
+
+  @Get("shops")
+  @UseGuards(AdminOrSubAdminGuard)
+  getShops(@Req() req: any) {
+    return this.adminService.getShops(req.user);
   }
 
   @Get("staff")
@@ -55,10 +101,20 @@ export class AdminController {
     return this.adminService.getStaff(req.user, role);
   }
 
+  @Patch("staff/:id/verification")
+  @UseGuards(AdminGuard)
+  updateDeliveryPartnerVerification(
+    @Req() req: any,
+    @Param("id", ParseIntPipe) id: number,
+    @Body() body: { isVerified: boolean },
+  ) {
+    return this.adminService.updateDeliveryPartnerVerification(req.user, id, body.isVerified);
+  }
+
   @Get("reports/pickers")
   @UseGuards(AdminOrSubAdminGuard)
-  getPickerReports(@Query("month") month?: string) {
-    return this.adminService.getPickerMonthlyReport(month);
+  getPickerReports(@Req() req: any, @Query("month") month?: string) {
+    return this.adminService.getPickerMonthlyReport(req.user, month);
   }
 
   @ApiOperation({

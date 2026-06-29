@@ -1,6 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 
+const DEFAULT_DELIVERY_SLOT_TIMES = ["10:00 AM", "1:00 PM", "5:00 PM", "8:00 PM"];
+
 @Injectable()
 export class SettingsService {
   constructor(private prisma: PrismaService) {}
@@ -13,7 +15,12 @@ export class SettingsService {
       settings = await this.prisma.settings.create({ data: {} });
     }
 
-    return settings;
+    return {
+      ...settings,
+      deliverySlotTimes: Array.isArray(settings.deliverySlotTimes)
+        ? settings.deliverySlotTimes
+        : DEFAULT_DELIVERY_SLOT_TIMES,
+    };
   }
 
   private async getSettingsId() {
@@ -62,6 +69,19 @@ export class SettingsService {
     if (dto.maintenanceMode !== undefined) {
       data.maintenanceMode =
         dto.maintenanceMode === true || dto.maintenanceMode === "true";
+    }
+
+    if (dto.deliverySlotTimes !== undefined) {
+      const values = Array.isArray(dto.deliverySlotTimes)
+        ? dto.deliverySlotTimes
+        : String(dto.deliverySlotTimes || "")
+            .split(",")
+            .map((value) => value.trim());
+
+      data.deliverySlotTimes = values
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+        .slice(0, 8);
     }
 
     return this.prisma.settings.update({

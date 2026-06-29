@@ -261,6 +261,67 @@ export class AuthService {
     return { token, user };
   }
 
+  async registerDeliveryPartner(body: {
+    name: string;
+    email: string;
+    phone: string;
+    password: string;
+  }) {
+    const cleanName = String(body.name || "").trim();
+    const normalizedEmail = String(body.email || "").trim().toLowerCase();
+    const cleanPhone = String(body.phone || "").replace(/\D/g, "");
+    const cleanPassword = String(body.password || "");
+
+    if (!cleanName || !normalizedEmail || !cleanPhone || !cleanPassword) {
+      throw new BadRequestException("Name, email, phone and password are required");
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      throw new BadRequestException("Valid email is required");
+    }
+
+    if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
+      throw new BadRequestException("Enter a valid 10-digit Indian mobile number");
+    }
+
+    if (cleanPassword.length < 6) {
+      throw new BadRequestException("Password must be at least 6 characters");
+    }
+
+    const [existingEmail, existingPhone] = await Promise.all([
+      this.prisma.user.findUnique({ where: { email: normalizedEmail } }),
+      this.prisma.user.findUnique({ where: { phone: cleanPhone } }),
+    ]);
+
+    if (existingEmail) throw new BadRequestException("Email already registered");
+    if (existingPhone) throw new BadRequestException("Phone already registered");
+
+    const user = await this.prisma.user.create({
+      data: {
+        name: cleanName,
+        email: normalizedEmail,
+        phone: cleanPhone,
+        passwordHash: await bcrypt.hash(cleanPassword, 10),
+        isVerified: false,
+        role: UserRole.DELIVERY_PARTNER,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        role: true,
+        isVerified: true,
+        createdAt: true,
+      },
+    });
+
+    return {
+      message: "Registration submitted. Admin approval is required before login.",
+      user,
+    };
+  }
+
   // ----------------------------------------------------------
   // GOOGLE LOGIN / REGISTER
   // ----------------------------------------------------------
@@ -361,13 +422,22 @@ export class AuthService {
   // ADMIN LOGIN
   // ----------------------------------------------------------
   async validateAdmin(email: string, password: string) {
-    const admin = await this.prisma.user.findUnique({ where: { email } });
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const admin = await this.prisma.user.findUnique({ where: { email: normalizedEmail } });
 
     if (
       !admin ||
-      !([UserRole.ADMIN, UserRole.SUB_ADMIN, UserRole.PICKER] as UserRole[]).includes(admin.role)
+      !([UserRole.ADMIN, UserRole.SUB_ADMIN, UserRole.PICKER, UserRole.DELIVERY_PARTNER] as UserRole[]).includes(admin.role)
     ) {
       throw new UnauthorizedException("Invalid admin credentials");
+    }
+
+    if (!admin.passwordHash) {
+      throw new UnauthorizedException("Please register with email and password");
+    }
+
+    if (admin.role === UserRole.DELIVERY_PARTNER && !admin.isVerified) {
+      throw new UnauthorizedException("Delivery partner account is awaiting admin approval");
     }
 
     const isMatch = await bcrypt.compare(password, admin.passwordHash);

@@ -47,6 +47,23 @@ class RegisterDto {
   password: string;
 }
 
+class DeliveryPartnerRegisterDto {
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  @IsNotEmpty()
+  phone: string;
+
+  @IsString()
+  @IsNotEmpty()
+  password: string;
+}
+
 class AdminLoginDto {
   @IsEmail()
   email: string;
@@ -125,6 +142,17 @@ export class AuthController {
       email: body.email,
       password: body.password,
     });
+  }
+
+  @ApiOperation({
+    summary: "Delivery partner registration request",
+    description: "Creates a pending delivery partner account. Admin approval is required before login.",
+  })
+  @ApiBody({ type: DeliveryPartnerRegisterDto })
+  @ApiBadRequestResponse({ description: "Email/phone already registered or invalid details" })
+  @Post("delivery/register")
+  registerDeliveryPartner(@Body() body: DeliveryPartnerRegisterDto) {
+    return this.authService.registerDeliveryPartner(body);
   }
 
   // ---------------- ADMIN LOGIN ----------------

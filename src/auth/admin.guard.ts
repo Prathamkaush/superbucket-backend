@@ -41,8 +41,22 @@ export class AdminStaffGuard implements CanActivate {
     const req = context.switchToHttp().getRequest();
     if (req.method === "OPTIONS") return true;
 
-    if (!hasRole(req.user, ["ADMIN", "SUB_ADMIN", "PICKER"])) {
+    if (!hasRole(req.user, ["ADMIN", "SUB_ADMIN", "PICKER", "DELIVERY_PARTNER"])) {
       throw new ForbiddenException("Staff access only");
+    }
+
+    return true;
+  }
+}
+
+@Injectable()
+export class DeliveryPartnerGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const req = context.switchToHttp().getRequest();
+    if (req.method === "OPTIONS") return true;
+
+    if (!hasRole(req.user, ["DELIVERY_PARTNER"])) {
+      throw new ForbiddenException("Delivery partner access only");
     }
 
     return true;

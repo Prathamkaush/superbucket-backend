@@ -608,6 +608,8 @@ export class ProductsService {
       search,
       trending,
       discounted,
+      compact,
+      fast,
 
       // 🔥 NEW FILTERS
       seasonId,
@@ -780,6 +782,116 @@ export class ProductsService {
       !isHomepageSection && page && take
         ? Math.max(0, (Number(page) - 1) * take)
         : undefined;
+
+    const isCompact = compact === 'true';
+
+    if (isCompact) {
+      const isFast = fast === 'true';
+      const products = await this.prisma.product.findMany({
+        where,
+        orderBy,
+        take,
+        skip,
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          brandName: true,
+          price: true,
+          discountType: true,
+          discountValue: true,
+          stock: true,
+          categoryId: true,
+          typeId: true,
+          img1: true,
+          img2: true,
+          img3: true,
+          img4: true,
+          isTrending: true,
+          freeShipping: true,
+          category: { select: { id: true, name: true } },
+          type: { select: { id: true, name: true } },
+          variants: {
+            where: { status: 'ACTIVE' },
+            orderBy: [{ isDefault: 'desc' }, { id: 'asc' }],
+            take: 4,
+            select: {
+              id: true,
+              sku: true,
+              name: true,
+              attributes: true,
+              flavour: true,
+              weightLabel: true,
+              mrp: true,
+              price: true,
+              stock: true,
+              isDefault: true,
+              image1: true,
+            },
+          },
+          sizes: {
+            take: 4,
+            select: {
+              id: true,
+              size: true,
+              stock: true,
+            },
+          },
+        },
+      });
+
+      if (isFast) {
+        return {
+          products: products.map((p) => ({
+            ...p,
+            finalPrice: this.getFinalPrice(p),
+            averageRating: 0,
+            reviewCount: 0,
+          })),
+          total: products.length,
+          page: page ? Number(page) : 1,
+          pages: 1,
+          availableTags: [],
+        };
+      }
+
+      const [total, ratingRows] = await Promise.all([
+        this.prisma.product.count({ where }),
+        products.length
+          ? this.prisma.review.groupBy({
+              by: ['productId'],
+              where: {
+                productId: { in: products.map((product) => product.id) },
+                status: 'APPROVED',
+              },
+              _avg: { rating: true },
+              _count: { rating: true },
+            })
+          : Promise.resolve([]),
+      ]);
+      const ratingsByProduct = new Map(
+        ratingRows.map((row) => [
+          row.productId,
+          {
+            averageRating: Number((row._avg.rating || 0).toFixed(1)),
+            reviewCount: row._count.rating,
+          },
+        ]),
+      );
+
+      return {
+        products: products.map((p) => ({
+          ...p,
+          finalPrice: this.getFinalPrice(p),
+          averageRating: ratingsByProduct.get(p.id)?.averageRating || 0,
+          reviewCount: ratingsByProduct.get(p.id)?.reviewCount || 0,
+        })),
+        total,
+        page: page ? Number(page) : 1,
+        pages: take ? Math.ceil(total / take) : 1,
+        availableTags: [],
+      };
+    }
 
     /* ---------------- QUERY WITH VENDORS --------------------  */
     const products = await this.prisma.product.findMany({
