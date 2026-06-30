@@ -98,7 +98,6 @@ export class PaymentsController {
   })
   @ApiUnauthorizedResponse({ description: "Unauthorized" })
   @UseGuards(JwtAuthGuard)
-  @UseGuards(JwtAuthGuard)
 @Post("razorpay/verify")
 async verifyPayment(@Req() req, @Body() body) {
   const crypto = require("crypto");
@@ -108,7 +107,11 @@ async verifyPayment(@Req() req, @Body() body) {
     razorpay_payment_id,
     razorpay_signature,
     address,
+    addressId,
     couponCode,
+    deliveryMode,
+    scheduledDeliveryAt,
+    deliverySlotLabel,
   } = body;
 
   const expected = crypto
@@ -123,8 +126,12 @@ async verifyPayment(@Req() req, @Body() body) {
   // ✅ Correct call
   const order = await this.ordersService.createOrder(req.user.id, {
     address,
+    addressId,
     paymentMethod: "RAZORPAY",
     couponCode,
+    deliveryMode,
+    scheduledDeliveryAt,
+    deliverySlotLabel,
   });
 
   await this.prisma.order.update({
@@ -137,7 +144,13 @@ async verifyPayment(@Req() req, @Body() body) {
     },
   });
 
-  return { success: true, orderId: order.orderId };
+  return {
+    success: true,
+    ...order,
+    orderId: order.orderId,
+    razorpayOrderId: razorpay_order_id,
+    paymentId: razorpay_payment_id,
+  };
 }
 
 }
