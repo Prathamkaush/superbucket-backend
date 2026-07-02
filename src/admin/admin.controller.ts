@@ -69,12 +69,12 @@ export class AdminController {
   }
 
   @Post("shops")
-  @UseGuards(AdminGuard)
+  @UseGuards(AdminOrSubAdminGuard)
   createShop(
     @Req() req: any,
     @Body()
     body: {
-      ownerId: number;
+      ownerId?: number;
       name: string;
       phone?: string;
       address: string;

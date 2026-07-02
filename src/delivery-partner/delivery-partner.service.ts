@@ -40,8 +40,6 @@ export class DeliveryPartnerService {
       },
       dispatchedBy: { select: { id: true, name: true, phone: true, email: true } },
       deliveryPartner: { select: { id: true, name: true, phone: true, email: true } },
-      deliveryOtp: true,
-      deliveryOtpVerifiedAt: true,
       items: {
         include: {
           product: { select: { id: true, title: true, img1: true } },

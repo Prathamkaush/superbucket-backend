@@ -119,7 +119,7 @@ export class AdminService {
   async createShop(
     actor: { id: number; role: UserRole },
     body: {
-      ownerId: number;
+      ownerId?: number;
       name: string;
       phone?: string;
       address: string;
@@ -131,28 +131,43 @@ export class AdminService {
       radiusKm?: number;
     },
   ) {
-    if (actor.role !== UserRole.ADMIN) {
-      throw new ForbiddenException("Only admin can create shops");
+    const ownerId = actor.role === UserRole.SUB_ADMIN ? actor.id : Number(body.ownerId);
+
+    if (actor.role !== UserRole.ADMIN && actor.role !== UserRole.SUB_ADMIN) {
+      throw new ForbiddenException("Only admin or sub-admin can create shops");
     }
 
-    const owner = await this.prisma.user.findUnique({ where: { id: Number(body.ownerId) } });
+    if (actor.role === UserRole.ADMIN && !ownerId) {
+      throw new BadRequestException("Shop owner is required");
+    }
+
+    const owner = await this.prisma.user.findUnique({ where: { id: ownerId } });
     if (!owner || owner.role !== UserRole.SUB_ADMIN) {
       throw new BadRequestException("Shop owner must be a sub-admin");
     }
 
-    return this.prisma.shop.create({
-      data: {
-        ownerId: owner.id,
-        name: String(body.name || "").trim(),
-        phone: body.phone?.trim() || null,
-        address: String(body.address || "").trim(),
-        city: String(body.city || "").trim(),
-        state: String(body.state || "").trim(),
-        pincode: String(body.pincode || "").trim(),
-        latitude: body.latitude,
-        longitude: body.longitude,
-        radiusKm: body.radiusKm ?? 5,
-      },
+    const data = {
+      name: String(body.name || "").trim(),
+      phone: body.phone?.trim() || null,
+      address: String(body.address || "").trim(),
+      city: String(body.city || "").trim(),
+      state: String(body.state || "").trim(),
+      pincode: String(body.pincode || "").trim(),
+      latitude: body.latitude,
+      longitude: body.longitude,
+      radiusKm: body.radiusKm ?? 5,
+    };
+
+    if (!data.name) throw new BadRequestException("Shop name is required");
+    if (!data.address) throw new BadRequestException("Shop address is required");
+    if (!data.city) throw new BadRequestException("Shop city is required");
+    if (!data.state) throw new BadRequestException("Shop state is required");
+    if (!data.pincode) throw new BadRequestException("Shop pincode is required");
+
+    return this.prisma.shop.upsert({
+      where: { ownerId: owner.id },
+      create: { ownerId: owner.id, ...data },
+      update: data,
     });
   }
 
