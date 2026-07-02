@@ -5,6 +5,7 @@ import {
   IsBoolean,
   Matches,
   MaxLength,
+  IsNumber,
 } from "class-validator";
 
 export class CreateAddressDto {
@@ -45,4 +46,12 @@ export class CreateAddressDto {
   @IsOptional()
   @IsBoolean()
   isDefault?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  latitude?: number;
+
+  @IsOptional()
+  @IsNumber()
+  longitude?: number;
 }

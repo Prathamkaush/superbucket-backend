@@ -325,15 +325,17 @@ async resolveAddress(
       throw new BadRequestException("Address not found");
     }
 
-    return {
-      name: saved.name,
-      phone: saved.phone,
-      street: saved.street,
-      city: saved.city,
-      state: saved.state,
-      pincode: saved.pincode,
-    };
-  }
+      return {
+        name: saved.name,
+        phone: saved.phone,
+        street: saved.street,
+        city: saved.city,
+        state: saved.state,
+        pincode: saved.pincode,
+        latitude: toNumber(saved.latitude),
+        longitude: toNumber(saved.longitude),
+      };
+    }
 
   if (!address || !address.pincode) {
     throw new BadRequestException("Address is required");

@@ -915,6 +915,8 @@ model UserAddress {
   city    String
   state   String
   pincode String
+  latitude  Decimal? @db.Decimal(10, 7)
+  longitude Decimal? @db.Decimal(10, 7)
 
   isDefault Boolean @default(false)
 
@@ -924,6 +926,7 @@ model UserAddress {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([latitude, longitude])
 }
 
 // -----------------------------------------
