@@ -22,8 +22,30 @@ export class DeliveryPartnerService {
     }
   }
 
-  private orderInclude() {
+  private orderSelect() {
     return {
+      id: true,
+      totalAmount: true,
+      totalGst: true,
+      shippingCharge: true,
+      finalAmount: true,
+      status: true,
+      address: true,
+      createdAt: true,
+      acceptedAt: true,
+      dispatchedAt: true,
+      shippedAt: true,
+      deliveredAt: true,
+      deliveryPartnerName: true,
+      deliveryPartnerPhone: true,
+      deliveryLatitude: true,
+      deliveryLongitude: true,
+      deliveryLocationUpdatedAt: true,
+      deliveryOtp: true,
+      deliveryOtpVerifiedAt: true,
+      deliveryMode: true,
+      scheduledDeliveryAt: true,
+      deliverySlotLabel: true,
       user: { select: { id: true, name: true, phone: true, email: true } },
       shop: {
         select: {
@@ -41,7 +63,14 @@ export class DeliveryPartnerService {
       dispatchedBy: { select: { id: true, name: true, phone: true, email: true } },
       deliveryPartner: { select: { id: true, name: true, phone: true, email: true } },
       items: {
-        include: {
+        select: {
+          id: true,
+          quantity: true,
+          price: true,
+          originalPrice: true,
+          variantName: true,
+          flavour: true,
+          weightLabel: true,
           product: { select: { id: true, title: true, img1: true } },
           variant: { select: { id: true, name: true, flavour: true, weightLabel: true, image1: true } },
           size: { select: { size: true } },
@@ -63,7 +92,7 @@ export class DeliveryPartnerService {
           { scheduledDeliveryAt: { lte: new Date() } },
         ],
       },
-      include: this.orderInclude(),
+      select: this.orderSelect(),
       orderBy: { dispatchedAt: "asc" },
     });
   }
@@ -73,7 +102,7 @@ export class DeliveryPartnerService {
 
     return this.prisma.order.findMany({
       where: { deliveryPartnerId: actor.id },
-      include: this.orderInclude(),
+      select: this.orderSelect(),
       orderBy: { createdAt: "desc" },
     });
   }
@@ -93,7 +122,7 @@ export class DeliveryPartnerService {
     return this.prisma.order.update({
       where: { id: orderId },
       data: { deliveryPartnerId: actor.id },
-      include: this.orderInclude(),
+      select: this.orderSelect(),
     });
   }
 
@@ -141,7 +170,7 @@ export class DeliveryPartnerService {
           deliveryPartnerPhone: String(body.deliveryPartnerPhone || "").trim() || null,
         }),
       },
-      include: this.orderInclude(),
+      select: this.orderSelect(),
     });
   }
 
@@ -171,7 +200,7 @@ export class DeliveryPartnerService {
         deliveredAt: new Date(),
         deliveryOtpVerifiedAt: new Date(),
       },
-      include: this.orderInclude(),
+      select: this.orderSelect(),
     });
   }
 }
