@@ -56,6 +56,7 @@ export class AdminService {
 
     const name = String(body.name || "").trim();
     const email = this.normalizeEmail(body.email);
+    const phone = body.phone?.trim() || null;
     const password = String(body.password || "");
 
     if (!name) throw new BadRequestException("Name is required");
@@ -64,6 +65,11 @@ export class AdminService {
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) throw new BadRequestException("Email already exists");
 
+    if (phone) {
+      const existingPhone = await this.prisma.user.findFirst({ where: { phone } });
+      if (existingPhone) throw new BadRequestException("Phone already exists");
+    }
+
     const staffShopId =
       role === UserRole.PICKER
         ? actor.role === UserRole.SUB_ADMIN
@@ -71,27 +77,42 @@ export class AdminService {
           : body.shopId
         : undefined;
 
-    const staff = await this.prisma.user.create({
-      data: {
-        name,
-        email,
-        phone: body.phone?.trim() || null,
-        passwordHash: await bcrypt.hash(password, 10),
-        isVerified: true,
-        role,
-        createdById: actor.id,
-        ...(staffShopId ? { staffShopId } : {}),
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        role: true,
-        createdAt: true,
-        staffShop: { select: { id: true, name: true, pincode: true } },
-      },
-    });
+    let staff;
+    try {
+      staff = await this.prisma.user.create({
+        data: {
+          name,
+          email,
+          phone,
+          passwordHash: await bcrypt.hash(password, 10),
+          isVerified: true,
+          role,
+          createdById: actor.id,
+          ...(staffShopId ? { staffShopId } : {}),
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
+          role: true,
+          createdAt: true,
+          staffShop: { select: { id: true, name: true, pincode: true } },
+        },
+      });
+    } catch (error: any) {
+      if (error?.code === "P2002") {
+        const target = Array.isArray(error.meta?.target)
+          ? error.meta.target.join(", ")
+          : String(error.meta?.target || "");
+
+        if (target.includes("phone")) throw new BadRequestException("Phone already exists");
+        if (target.includes("email")) throw new BadRequestException("Email already exists");
+        throw new BadRequestException("Staff member already exists");
+      }
+
+      throw error;
+    }
 
     if (role === UserRole.SUB_ADMIN && body.shop) {
       await this.createShop(actor, {
