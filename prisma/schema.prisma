@@ -99,6 +99,11 @@ model User {
   contacts  Contact[]
   wishlists Wishlist[]
   addresses UserAddress[]
+  pushTokens PushDeviceToken[]
+  notifications Notification[] @relation("NotificationRecipient")
+  sentNotifications Notification[] @relation("NotificationCreatedBy")
+  wallet WalletAccount?
+  walletTransactions WalletTransaction[]
 
   properties    Property[]
   propertyLeads PropertyLead[]
@@ -109,6 +114,88 @@ model User {
 
   @@index([createdById])
   @@index([staffShopId])
+}
+
+enum PushDevicePlatform {
+  ANDROID
+  IOS
+  WEB
+}
+
+enum NotificationAudience {
+  ALL
+  USERS
+  DELIVERY_PARTNERS
+  PROPERTY_OWNERS
+}
+
+model PushDeviceToken {
+  id         Int                @id @default(autoincrement())
+  userId     Int
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token      String             @unique @db.VarChar(512)
+  platform   PushDevicePlatform @default(ANDROID)
+  app        String?
+  isActive   Boolean            @default(true)
+  lastSeenAt DateTime           @default(now())
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  @@index([userId])
+  @@index([isActive])
+}
+
+model Notification {
+  id          Int                   @id @default(autoincrement())
+  userId      Int?
+  user        User?                 @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  audience    NotificationAudience?
+  type        String                @default("GENERAL")
+  title       String
+  body        String                @db.Text
+  imageUrl    String?
+  data        Json?
+  readAt      DateTime?
+  sentAt      DateTime?
+  createdById Int?
+  createdBy   User?                @relation("NotificationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime             @default(now())
+
+  @@index([userId, createdAt])
+  @@index([audience, createdAt])
+  @@index([readAt])
+}
+
+model WalletAccount {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance   Decimal  @default(0) @db.Decimal(10, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions WalletTransaction[]
+}
+
+enum WalletTransactionType {
+  CREDIT
+  DEBIT
+}
+
+model WalletTransaction {
+  id        Int                   @id @default(autoincrement())
+  walletId  Int
+  wallet    WalletAccount         @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  userId    Int
+  user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      WalletTransactionType
+  amount    Decimal               @db.Decimal(10, 2)
+  label     String
+  reference String?
+  createdAt DateTime              @default(now())
+
+  @@index([userId, createdAt])
+  @@index([walletId])
 }
 
 model Shop {

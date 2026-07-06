@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { OrderStatus, UserRole } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { NotificationsService } from "../notifications/notifications.service";
 
 function toNumber(value: any) {
   const num = Number(value);
@@ -14,7 +15,10 @@ function toNumber(value: any) {
 
 @Injectable()
 export class DeliveryPartnerService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+  ) {}
 
   private assertDeliveryPartner(actor: { id: number; role: UserRole }) {
     if (!actor || actor.role !== UserRole.DELIVERY_PARTNER) {
@@ -119,11 +123,19 @@ export class DeliveryPartnerService {
       throw new BadRequestException("Order is already assigned to another delivery partner");
     }
 
-    return this.prisma.order.update({
+    const updated = await this.prisma.order.update({
       where: { id: orderId },
       data: { deliveryPartnerId: actor.id },
       select: this.orderSelect(),
     });
+    this.notifications.createAndSend({
+      userId: updated.user.id,
+      type: "DELIVERY_ACCEPTED",
+      title: "Delivery partner assigned",
+      body: `${updated.deliveryPartner?.name || "Your delivery partner"} accepted order #${updated.id}.`,
+      data: { orderId: updated.id, screen: "OrderTracking" },
+    }).catch(() => undefined);
+    return updated;
   }
 
   async updateLocation(
@@ -193,7 +205,7 @@ export class DeliveryPartnerService {
       throw new BadRequestException("Invalid delivery OTP");
     }
 
-    return this.prisma.order.update({
+    const updated = await this.prisma.order.update({
       where: { id: orderId },
       data: {
         status: OrderStatus.DELIVERED,
@@ -202,5 +214,11 @@ export class DeliveryPartnerService {
       },
       select: this.orderSelect(),
     });
+    this.notifications.notifyOrderStatus({
+      id: updated.id,
+      userId: updated.user.id,
+      status: OrderStatus.DELIVERED,
+    }).catch(() => undefined);
+    return updated;
   }
 }

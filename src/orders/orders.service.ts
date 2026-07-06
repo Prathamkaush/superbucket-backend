@@ -8,6 +8,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { Prisma , OrderStatus, UserRole } from "@prisma/client";
 import { getDelhiveryRate } from "../delivery/delhivery-rates.service";
 import { CouponsService } from "../coupons/coupons.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { randomInt } from "crypto";
 
 function calculateOrderWeightKg(items: any[]) {
@@ -36,7 +37,11 @@ function haversineKm(fromLat: number, fromLng: number, toLat: number, toLng: num
 
 @Injectable()
 export class OrdersService {
-  constructor(private prisma: PrismaService ,  private couponsService: CouponsService ) {}
+  constructor(
+    private prisma: PrismaService,
+    private couponsService: CouponsService,
+    private notifications: NotificationsService,
+  ) {}
 
   // ================= ADMIN =================
 
@@ -250,7 +255,7 @@ export class OrdersService {
     if (actor?.id) data.fulfilledById = actor.id;
   }
 
-  return this.prisma.order.update({
+  const updated = await this.prisma.order.update({
     where: { id: orderId },
     data,
     include: {
@@ -260,6 +265,9 @@ export class OrdersService {
       shop: { select: { id: true, name: true, pincode: true } },
     },
   });
+
+  this.notifications.notifyOrderStatus(updated).catch(() => undefined);
+  return updated;
 }
 
 async updateDeliveryLocation(
@@ -557,6 +565,8 @@ async createOrder(
 
     return order;
   });
+
+  this.notifications.notifyOrderCreated(userId, order).catch(() => undefined);
 
   return {
     orderId: order.id,

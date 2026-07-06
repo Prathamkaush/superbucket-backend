@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../auth/strategies/jwt-auth.guard';
 import { JwtStrategy } from '../auth/strategies/jwt.strategy';
 import { JwtModule } from '@nestjs/jwt';
 import { CouponsModule } from "../coupons/coupons.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { CouponsModule } from "../coupons/coupons.module";
       signOptions: { expiresIn: '30d' },
     }),
     CouponsModule,
+    NotificationsModule,
   ],
   controllers: [OrdersController],
   providers: [

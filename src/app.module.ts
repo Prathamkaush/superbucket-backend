@@ -29,6 +29,8 @@ import { VendorModule } from './vendor/vendor.module';
 import { PropertiesModule } from './properties/properties.module';
 import { ServicesMarketplaceModule } from './services-marketplace/services-marketplace.module';
 import { DeliveryPartnerModule } from './delivery-partner/delivery-partner.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { WalletModule } from './wallet/wallet.module';
 
 
 
@@ -69,6 +71,8 @@ import { DeliveryPartnerModule } from './delivery-partner/delivery-partner.modul
     PropertiesModule,
     ServicesMarketplaceModule,
     DeliveryPartnerModule,
+    NotificationsModule,
+    WalletModule,
   ],
 })
 export class AppModule {}

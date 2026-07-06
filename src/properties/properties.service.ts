@@ -15,10 +15,14 @@ import {
   PropertyVerification,
   LeadStatus,
 } from "@prisma/client";
+import { NotificationsService } from "../notifications/notifications.service";
 
 @Injectable()
 export class PropertiesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   // -------------------------------------------------------------------------
   // OWNER / RENTER ACTIONS
@@ -33,7 +37,7 @@ export class PropertiesService {
       ? PropertyVerification.DOCS_PENDING
       : PropertyVerification.NOT_SUBMITTED;
 
-    return this.prisma.property.create({
+    const property = await this.prisma.property.create({
       data: {
         title: dto.title,
         address: dto.address,
@@ -53,6 +57,14 @@ export class PropertiesService {
         ownerId: ownerId,
       },
     });
+    this.notifications.createAndSend({
+      userId: ownerId,
+      type: "PROPERTY_SUBMITTED",
+      title: "Property submitted",
+      body: "Your property listing was submitted for admin review.",
+      data: { propertyId: property.id, screen: "RenterPortal" },
+    }).catch(() => undefined);
+    return property;
   }
 
   async findMyProperties(ownerId: number) {
@@ -345,7 +357,7 @@ export class PropertiesService {
 
     const status = dto.visitTime ? LeadStatus.VISIT_BOOKED : LeadStatus.PENDING;
 
-    return this.prisma.propertyLead.create({
+    const lead = await this.prisma.propertyLead.create({
       data: {
         propertyId,
         userId,
@@ -354,6 +366,8 @@ export class PropertiesService {
         visitTime: dto.visitTime ? new Date(dto.visitTime) : null,
       },
     });
+    this.notifications.notifyPropertyLead(property.ownerId, property.id, property.title).catch(() => undefined);
+    return lead;
   }
 
   // -------------------------------------------------------------------------
@@ -386,13 +400,15 @@ export class PropertiesService {
       throw new NotFoundException("Property listing not found");
     }
 
-    return this.prisma.property.update({
+    const updated = await this.prisma.property.update({
       where: { id },
       data: {
         status: PropertyStatus.LIVE,
         verification: PropertyVerification.VERIFIED,
       },
     });
+    this.notifications.notifyPropertyStatus(updated.ownerId, updated.id, true).catch(() => undefined);
+    return updated;
   }
 
   async adminReject(id: number) {
@@ -404,11 +420,13 @@ export class PropertiesService {
       throw new NotFoundException("Property listing not found");
     }
 
-    return this.prisma.property.update({
+    const updated = await this.prisma.property.update({
       where: { id },
       data: {
         status: PropertyStatus.REJECTED,
       },
     });
+    this.notifications.notifyPropertyStatus(updated.ownerId, updated.id, false).catch(() => undefined);
+    return updated;
   }
 }

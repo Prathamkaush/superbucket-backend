@@ -5,10 +5,12 @@ import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
 import { PrismaModule } from "../prisma/prisma.module";
 import { DeliveryPartnerController } from "./delivery-partner.controller";
 import { DeliveryPartnerService } from "./delivery-partner.service";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
   imports: [
     PrismaModule,
+    NotificationsModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET || "your-secret-key",
       signOptions: { expiresIn: "30d" },
