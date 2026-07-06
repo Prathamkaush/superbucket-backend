@@ -64,7 +64,27 @@ export class DeliveryPartnerService {
           longitude: true,
         },
       },
-      dispatchedBy: { select: { id: true, name: true, phone: true, email: true } },
+      dispatchedBy: {
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          email: true,
+          staffShop: {
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+              address: true,
+              city: true,
+              state: true,
+              pincode: true,
+              latitude: true,
+              longitude: true,
+            },
+          },
+        },
+      },
       deliveryPartner: { select: { id: true, name: true, phone: true, email: true } },
       items: {
         select: {

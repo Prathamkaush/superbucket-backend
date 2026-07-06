@@ -3,6 +3,15 @@ import { PrismaService } from "../prisma/prisma.service";
 import { Prisma, UserRole } from "@prisma/client";
 import * as bcrypt from "bcrypt";
 
+function toCoordinate(value: any, label: string, min: number, max: number) {
+  if (value === undefined || value === null || value === "") return null;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < min || num > max) {
+    throw new BadRequestException(`Valid shop ${label} is required`);
+  }
+  return Number(num.toFixed(7));
+}
+
 @Injectable()
 export class AdminService {
   constructor(private prisma: PrismaService) {}
@@ -167,6 +176,13 @@ export class AdminService {
       throw new BadRequestException("Shop owner must be a sub-admin");
     }
 
+    const latitude = toCoordinate(body.latitude, "latitude", -90, 90);
+    const longitude = toCoordinate(body.longitude, "longitude", -180, 180);
+
+    if ((latitude === null) !== (longitude === null)) {
+      throw new BadRequestException("Both shop latitude and longitude are required");
+    }
+
     const data = {
       name: String(body.name || "").trim(),
       phone: body.phone?.trim() || null,
@@ -174,8 +190,8 @@ export class AdminService {
       city: String(body.city || "").trim(),
       state: String(body.state || "").trim(),
       pincode: String(body.pincode || "").trim(),
-      latitude: body.latitude,
-      longitude: body.longitude,
+      latitude,
+      longitude,
       radiusKm: body.radiusKm ?? 5,
     };
 

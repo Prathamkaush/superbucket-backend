@@ -247,6 +247,12 @@ export class OrdersService {
     data.shippedAt = new Date();
     data.dispatchedAt = new Date();
     if (actor?.id) data.dispatchedById = actor.id;
+    if (actor?.role === UserRole.PICKER && existing.shopId === null && shopId !== undefined) {
+      data.shopId = shopId;
+    } else if (existing.shopId === null) {
+      const nearestShop = await this.findNearestShop(existing.address);
+      if (nearestShop?.id) data.shopId = nearestShop.id;
+    }
   }
 
   if (status === OrderStatus.DELIVERED) {
@@ -262,7 +268,19 @@ export class OrdersService {
       acceptedBy: { select: { id: true, name: true, email: true } },
       dispatchedBy: { select: { id: true, name: true, email: true } },
       fulfilledBy: { select: { id: true, name: true, email: true } },
-      shop: { select: { id: true, name: true, pincode: true } },
+      shop: {
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          address: true,
+          city: true,
+          state: true,
+          pincode: true,
+          latitude: true,
+          longitude: true,
+        },
+      },
     },
   });
 
