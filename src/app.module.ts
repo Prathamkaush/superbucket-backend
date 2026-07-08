@@ -31,6 +31,7 @@ import { ServicesMarketplaceModule } from './services-marketplace/services-marke
 import { DeliveryPartnerModule } from './delivery-partner/delivery-partner.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { WalletModule } from './wallet/wallet.module';
+import { HomeOffersModule } from './home-offers/home-offers.module';
 
 
 
@@ -73,6 +74,7 @@ import { WalletModule } from './wallet/wallet.module';
     DeliveryPartnerModule,
     NotificationsModule,
     WalletModule,
+    HomeOffersModule,
   ],
 })
 export class AppModule {}

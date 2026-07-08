@@ -74,6 +74,94 @@ export class ServicesMarketplaceService {
     });
   }
 
+  async listPublicProviders(params: { categoryId?: number; page?: number; limit?: number }) {
+    const page = Math.max(1, Number(params.page) || 1);
+    const limit = Math.min(20, Math.max(1, Number(params.limit) || 10));
+    const skip = (page - 1) * limit;
+    const where: Prisma.ServiceProviderProfileWhereInput = {
+      status: ServiceProviderStatus.APPROVED,
+      isOnline: true,
+      ...(params.categoryId
+        ? { services: { some: { categoryId: params.categoryId } } }
+        : {}),
+    };
+
+    const [profiles, total] = await Promise.all([
+      this.prisma.serviceProviderProfile.findMany({
+        where,
+        skip,
+        take: limit,
+        include: {
+          user: { select: providerUserSelect },
+          services: {
+            where: params.categoryId ? { categoryId: params.categoryId } : {},
+            include: { category: { include: { packages: { where: { isActive: true }, orderBy: { price: "asc" } } } } },
+          },
+        },
+        orderBy: [{ approvedAt: "desc" }, { createdAt: "desc" }],
+      }),
+      this.prisma.serviceProviderProfile.count({ where }),
+    ]);
+
+    const userIds = profiles.map((profile) => profile.userId);
+    const [ratings, completed] = userIds.length
+      ? await Promise.all([
+          this.prisma.serviceBooking.groupBy({
+            by: ["providerId"],
+            where: { providerId: { in: userIds }, status: ServiceBookingStatus.COMPLETED, rating: { not: null } },
+            _avg: { rating: true },
+            _count: { rating: true },
+          }),
+          this.prisma.serviceBooking.groupBy({
+            by: ["providerId"],
+            where: { providerId: { in: userIds }, status: ServiceBookingStatus.COMPLETED },
+            _count: { id: true },
+          }),
+        ])
+      : [[], []];
+    const ratingMap = new Map(ratings.map((item) => [item.providerId, item]));
+    const completedMap = new Map(completed.map((item) => [item.providerId, item._count.id]));
+
+    return {
+      items: profiles.map((profile) => {
+        const rating = ratingMap.get(profile.userId);
+        const categories = profile.services.map((service) => service.category);
+        const packages = categories.flatMap((category) => category.packages || []);
+        const startingPrice = packages.length
+          ? Math.min(...packages.map((item) => Number(item.price)))
+          : null;
+        return {
+          id: profile.userId,
+          profileId: profile.id,
+          name: profile.user.name || "Service provider",
+          phone: profile.user.phone,
+          profileImage: profile.user.profileImage,
+          bio: profile.bio,
+          city: profile.city,
+          experienceYears: profile.experienceYears,
+          serviceRadiusKm: profile.serviceRadiusKm,
+          categories: categories.map((category) => ({
+            id: category.id,
+            name: category.name,
+            icon: category.icon,
+            packages: category.packages,
+          })),
+          startingPrice,
+          averageRating: rating?._avg.rating ? Number(rating._avg.rating.toFixed(1)) : null,
+          ratingCount: rating?._count.rating || 0,
+          completedJobs: completedMap.get(profile.userId) || 0,
+        };
+      }),
+      meta: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+        hasMore: page * limit < total,
+      },
+    };
+  }
+
   async createBooking(customerId: number, dto: CreateServiceBookingDto) {
     const servicePackage = await this.prisma.servicePackage.findFirst({
       where: { id: dto.packageId, isActive: true, category: { isActive: true } },
@@ -96,11 +184,29 @@ export class ServicesMarketplaceService {
     const price = Number(servicePackage.price);
     const platformFee = Number((price * Number(servicePackage.platformFeePercent) / 100).toFixed(2));
     const bookingNumber = `SW${Date.now()}${randomInt(100, 1000)}`;
+    let providerId: number | null = null;
+    if (dto.providerId) {
+      const provider = await this.prisma.serviceProviderProfile.findFirst({
+        where: {
+          userId: dto.providerId,
+          status: ServiceProviderStatus.APPROVED,
+          isOnline: true,
+          services: { some: { categoryId: servicePackage.categoryId } },
+        },
+      });
+      if (!provider) {
+        throw new BadRequestException("Selected provider is not available for this service");
+      }
+      providerId = dto.providerId;
+    }
 
     return this.prisma.serviceBooking.create({
       data: {
         bookingNumber,
         customerId,
+        providerId,
+        status: providerId ? ServiceBookingStatus.ACCEPTED : ServiceBookingStatus.PENDING,
+        acceptedAt: providerId ? new Date() : null,
         packageId: servicePackage.id,
         scheduledAt,
         address: address as Prisma.InputJsonValue,

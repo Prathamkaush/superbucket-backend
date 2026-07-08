@@ -190,6 +190,45 @@ export class PropertiesService {
     });
   }
 
+  async updateOwnerPropertyStatus(
+    id: number,
+    ownerId: number,
+    status: PropertyStatus
+  ) {
+    const property = await this.prisma.property.findUnique({ where: { id } });
+
+    if (!property) {
+      throw new NotFoundException("Property listing not found");
+    }
+
+    if (property.ownerId !== ownerId) {
+      throw new ForbiddenException("You do not own this property listing");
+    }
+
+    const ownerEditableStatuses: PropertyStatus[] = [
+      PropertyStatus.LIVE,
+      PropertyStatus.SOLD,
+      PropertyStatus.RENTED,
+    ];
+
+    if (!ownerEditableStatuses.includes(status)) {
+      throw new BadRequestException("Owner can set only LIVE, SOLD, or RENTED status");
+    }
+
+    if (!ownerEditableStatuses.includes(property.status)) {
+      throw new BadRequestException("Only approved live listings can be marked available, sold, or rented");
+    }
+
+    if (status === PropertyStatus.LIVE && property.verification !== PropertyVerification.VERIFIED) {
+      throw new BadRequestException("Only verified listings can be made live");
+    }
+
+    return this.prisma.property.update({
+      where: { id },
+      data: { status },
+    });
+  }
+
   async updateLeadStatus(leadId: number, ownerId: number, status: LeadStatus) {
     const lead = await this.prisma.propertyLead.findUnique({
       where: { id: leadId },
@@ -250,7 +289,7 @@ export class PropertiesService {
     const skip = (page - 1) * limit;
 
     const whereClause: any = {
-      status: PropertyStatus.LIVE,
+      status: { in: [PropertyStatus.LIVE, PropertyStatus.SOLD, PropertyStatus.RENTED] },
     };
 
     if (query.category) {

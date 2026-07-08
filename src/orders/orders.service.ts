@@ -5,7 +5,7 @@ import {
   ForbiddenException,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { Prisma , OrderStatus, UserRole } from "@prisma/client";
+import { Prisma , OrderStatus, UserRole, WalletTransactionType } from "@prisma/client";
 import { getDelhiveryRate } from "../delivery/delhivery-rates.service";
 import { CouponsService } from "../coupons/coupons.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -370,13 +370,13 @@ async resolveAddress(
   return address;
 }
 
-  // ================= CREATE ORDER (COD / RAZORPAY) =================
+  // ================= CREATE ORDER (COD / RAZORPAY / WALLET) =================
 async createOrder(
   userId: number,
   payload: {
     address?: any;
     addressId?: number;
-    paymentMethod: "COD" | "RAZORPAY";
+    paymentMethod: "COD" | "RAZORPAY" | "WALLET";
     couponCode?: string;
     deliveryMode?: "INSTANT" | "SCHEDULED";
     scheduledDeliveryAt?: string | Date;
@@ -536,6 +536,28 @@ async createOrder(
         },
       },
     });
+
+    if (paymentMethod === "WALLET") {
+      const wallet = await tx.walletAccount.findUnique({ where: { userId } });
+      if (!wallet || Number(wallet.balance) < payable) {
+        throw new BadRequestException("Insufficient wallet balance");
+      }
+
+      await tx.walletAccount.update({
+        where: { userId },
+        data: { balance: { decrement: payable } },
+      });
+      await tx.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          userId,
+          type: WalletTransactionType.DEBIT,
+          amount: payable,
+          label: `Order #${order.id} payment`,
+          reference: `order_${order.id}`,
+        },
+      });
+    }
 
     /* STOCK UPDATE */
     for (const item of cart) {
@@ -922,24 +944,56 @@ async reorder(orderId: number, userId: number) {
     }
   }
 
-  // ✅ Transaction-safe cart rebuild
+  // Add previous order items into the current cart without removing existing items.
   await this.prisma.$transaction(async (tx) => {
-    await tx.cartItem.deleteMany({
-      where: { userId },
-    });
+    for (const item of order.items) {
+      const existing = await tx.cartItem.findFirst({
+        where: {
+          userId,
+          productId: item.productId,
+          variantId: item.variantId ?? null,
+          sizeId: item.sizeId ?? null,
+        },
+      });
+      const availableStock = item.variantId
+        ? item.variant?.stock || 0
+        : item.sizeId
+        ? item.size?.stock || 0
+        : item.product?.stock || 0;
+      const nextQuantity = (existing?.quantity || 0) + item.quantity;
 
-    await tx.cartItem.createMany({
-      data: order.items.map((i) => ({
-        userId,
-        productId: i.productId,
-        variantId: i.variantId ?? null,
-        sizeId: i.sizeId ?? null,
-        quantity: i.quantity,
-        price: Number(i.price),
-        gstRate: Number(i.gstRate || 0),
-        gstAmount: Number(i.gstAmount || 0),
-      })),
-    });
+      if (nextQuantity > availableStock) {
+        throw new BadRequestException(
+          `${item.product.title} does not have enough stock`
+        );
+      }
+
+      if (existing) {
+        await tx.cartItem.update({
+          where: { id: existing.id },
+          data: {
+            quantity: nextQuantity,
+            price: Number(item.price),
+            gstRate: Number(item.gstRate || 0),
+            gstAmount: Number(item.gstAmount || 0),
+          },
+        });
+      } else {
+        await tx.cartItem.create({
+          data: {
+            userId,
+            productId: item.productId,
+            variantId: item.variantId ?? null,
+            sizeId: item.sizeId ?? null,
+            quantity: item.quantity,
+            price: Number(item.price),
+            gstRate: Number(item.gstRate || 0),
+            gstAmount: Number(item.gstAmount || 0),
+            weight: Number(item.variant?.weightKg ?? item.product?.weight ?? 0),
+          },
+        });
+      }
+    }
   });
 
   return {
@@ -953,7 +1007,7 @@ async previewOrder(
     address?: any;
     addressId?: number;
   },
-  paymentMethod: "COD" | "RAZORPAY",
+  paymentMethod: "COD" | "RAZORPAY" | "WALLET",
   couponCode?: string
 ) {
   let address: any;

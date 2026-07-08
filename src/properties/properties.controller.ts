@@ -27,6 +27,7 @@ import {
   PropertyCategory,
   PropertyMode,
   LeadStatus,
+  PropertyStatus,
 } from "@prisma/client";
 import {
   ApiTags,
@@ -223,6 +224,18 @@ export class PropertiesController {
       req.user.id,
       req.user.role
     );
+  }
+
+  @ApiOperation({ summary: "Owner marks property as available, sold, or rented" })
+  @ApiBearerAuth("JWT-auth")
+  @UseGuards(JwtAuthGuard)
+  @Patch(":id/status")
+  updateOwnerStatus(
+    @Req() req,
+    @Param("id", ParseIntPipe) id: number,
+    @Body("status") status: PropertyStatus
+  ) {
+    return this.propertiesService.updateOwnerPropertyStatus(id, req.user.id, status);
   }
 
   @ApiOperation({ summary: "Update status of a property lead/inquiry" })

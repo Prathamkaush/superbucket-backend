@@ -17,6 +17,19 @@ export class ServicesMarketplaceController {
   @Get("catalog")
   catalog() { return this.service.getCatalog(); }
 
+  @Get("providers")
+  publicProviders(
+    @Query("categoryId") categoryId?: string,
+    @Query("page") page = "1",
+    @Query("limit") limit = "10",
+  ) {
+    return this.service.listPublicProviders({
+      categoryId: categoryId ? Number(categoryId) : undefined,
+      page: Number(page),
+      limit: Number(limit),
+    });
+  }
+
   @UseGuards(JwtAuthGuard)
   @Post("bookings")
   createBooking(@Req() req, @Body() dto: CreateServiceBookingDto) {

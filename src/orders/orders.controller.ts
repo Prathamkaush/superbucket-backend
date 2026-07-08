@@ -194,7 +194,7 @@ placeOrder(
   body: {
     address?: any;
     addressId?: number;
-    paymentMethod: "COD" | "RAZORPAY";
+    paymentMethod: "COD" | "RAZORPAY" | "WALLET";
     couponCode?: string;
     deliveryMode?: "INSTANT" | "SCHEDULED";
     scheduledDeliveryAt?: string;
@@ -209,7 +209,7 @@ placeOrder(
     throw new BadRequestException("Address or addressId is required");
   }
 
-  if (!["COD", "RAZORPAY"].includes(body.paymentMethod)) {
+  if (!["COD", "RAZORPAY", "WALLET"].includes(body.paymentMethod)) {
     throw new BadRequestException("Invalid payment method");
   }
 
@@ -274,7 +274,7 @@ previewOrder(
   body: {
     address?: any;
     addressId?: number;
-    paymentMethod: "COD" | "RAZORPAY";
+    paymentMethod: "COD" | "RAZORPAY" | "WALLET";
     couponCode?: string;
   }
 ) {

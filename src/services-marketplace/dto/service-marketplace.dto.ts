@@ -57,6 +57,7 @@ export class UpdateServicePackageDto {
 
 export class CreateServiceBookingDto {
   @Type(() => Number) @IsInt() packageId: number;
+  @IsOptional() @Type(() => Number) @IsInt() providerId?: number;
   @IsDateString() scheduledAt: string;
   @IsObject() address: Record<string, unknown>;
   @IsOptional() @IsString() customerNote?: string;

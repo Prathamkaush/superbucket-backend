@@ -12,8 +12,13 @@ export class WalletController {
     return this.wallet.getMine(req.user.id);
   }
 
-  @Post("add-credit")
-  addCredit(@Req() req: any, @Body() body: { amount: number; label?: string }) {
-    return this.wallet.addCredit(req.user.id, Number(body.amount), body.label);
+  @Post("topup/razorpay/create-order")
+  createTopupOrder(@Body() body: { amount: number }) {
+    return this.wallet.createTopupOrder(Number(body.amount));
+  }
+
+  @Post("topup/razorpay/verify")
+  verifyTopupPayment(@Req() req: any, @Body() body: any) {
+    return this.wallet.verifyTopupPayment(req.user.id, body);
   }
 }
