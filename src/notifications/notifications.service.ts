@@ -37,6 +37,8 @@ const STATUS_COPY: Record<OrderStatus, { title: string; body: (id: number) => st
   },
 };
 
+const MAX_NOTIFICATION_IMAGE_URL_LENGTH = 2048;
+
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
@@ -62,10 +64,9 @@ export class NotificationsService {
       let credential: firebaseAdmin.credential.Credential | undefined;
 
       if (encoded) {
-        const parsed = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
-        credential = firebaseAdmin.credential.cert(parsed);
+        credential = firebaseAdmin.credential.cert(parseFirebaseServiceAccount(encoded, true));
       } else if (json) {
-        credential = firebaseAdmin.credential.cert(JSON.parse(json));
+        credential = firebaseAdmin.credential.cert(parseFirebaseServiceAccount(json));
       } else if (projectId && clientEmail && privateKey) {
         credential = firebaseAdmin.credential.cert({ projectId, clientEmail, privateKey });
       }
@@ -79,7 +80,9 @@ export class NotificationsService {
       this.firebaseReady = true;
     } catch (error) {
       this.firebaseReady = false;
-      this.logger.error(`Firebase initialization failed: ${(error as Error).message}`);
+      this.logger.error(
+        `Firebase initialization failed: ${(error as Error).message}. Check FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_SERVICE_ACCOUNT formatting.`,
+      );
     }
   }
 
@@ -147,7 +150,7 @@ export class NotificationsService {
             type: payload.type,
             title: payload.title,
             body: payload.body,
-            imageUrl: payload.imageUrl || null,
+            imageUrl: normalizeImageUrl(payload.imageUrl),
             data: (payload.data || undefined) as Prisma.InputJsonValue | undefined,
             sentAt: new Date(),
             createdById: payload.createdById,
@@ -165,7 +168,7 @@ export class NotificationsService {
         type: payload.type,
         title: payload.title,
         body: payload.body,
-        imageUrl: payload.imageUrl || null,
+        imageUrl: normalizeImageUrl(payload.imageUrl),
         data: (payload.data || undefined) as Prisma.InputJsonValue | undefined,
         sentAt: new Date(),
         createdById: payload.createdById,
@@ -182,6 +185,7 @@ export class NotificationsService {
   ) {
     const audience = payload.audience || NotificationAudience.ALL;
     const users = await this.findAudienceUsers(audience);
+    const imageUrl = normalizeImageUrl(payload.imageUrl);
 
     const notifications = users.map((user) => ({
       userId: user.id,
@@ -189,7 +193,7 @@ export class NotificationsService {
       type: "ADMIN_BROADCAST",
       title: payload.title,
       body: payload.body,
-      imageUrl: payload.imageUrl || null,
+      imageUrl,
       data: { audience },
       createdById: actorId,
       sentAt: new Date(),
@@ -202,7 +206,7 @@ export class NotificationsService {
         type: "ADMIN_BROADCAST",
         title: payload.title,
         body: payload.body,
-        imageUrl: payload.imageUrl,
+        imageUrl,
         data: { audience },
       });
     }
@@ -348,4 +352,27 @@ export class NotificationsService {
     if (audience === NotificationAudience.PROPERTY_OWNERS) return { properties: { some: {} } };
     return {};
   }
+}
+
+function normalizeImageUrl(value?: string | null) {
+  const imageUrl = typeof value === "string" ? value.trim() : "";
+  if (!imageUrl) return null;
+  return imageUrl.slice(0, MAX_NOTIFICATION_IMAGE_URL_LENGTH);
+}
+
+function parseFirebaseServiceAccount(value: string, preferBase64 = false) {
+  const trimmed = value.trim();
+  const candidates = preferBase64
+    ? [Buffer.from(trimmed, "base64").toString("utf8"), trimmed]
+    : [trimmed, Buffer.from(trimmed, "base64").toString("utf8")];
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // Try the next supported encoding.
+    }
+  }
+
+  throw new Error("Firebase service account must be valid JSON or base64-encoded JSON");
 }

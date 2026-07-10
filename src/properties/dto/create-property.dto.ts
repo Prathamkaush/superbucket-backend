@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsEnum, IsNumber, IsOptional, Matches } from "class-validator";
+import { IsString, IsNotEmpty, IsEnum, IsNumber, IsOptional, Matches, Max, Min } from "class-validator";
 import { PropertyMode, PropertyCategory, PropertyFurnished } from "@prisma/client";
 
 export class CreatePropertyDto {
@@ -22,7 +22,9 @@ export class CreatePropertyDto {
   @IsNotEmpty()
   category: PropertyCategory;
 
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(1)
+  @Max(9999999999999.99, { message: "price is too high" })
   @IsNotEmpty()
   price: number;
 

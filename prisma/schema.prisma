@@ -153,7 +153,7 @@ model Notification {
   type        String                @default("GENERAL")
   title       String
   body        String                @db.Text
-  imageUrl    String?
+  imageUrl    String?               @db.Text
   data        Json?
   readAt      DateTime?
   sentAt      DateTime?
@@ -1204,7 +1204,7 @@ model Property {
   pincode      String?
   mode         PropertyMode
   category     PropertyCategory
-  price        Decimal              @db.Decimal(12, 2)
+  price        Decimal              @db.Decimal(15, 2)
   size         String
   floor        String?
   furnished    PropertyFurnished    @default(UNFURNISHED)

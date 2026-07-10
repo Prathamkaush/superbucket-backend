@@ -1,3 +1,4 @@
+import { Transform } from "class-transformer";
 import { IsIn, IsNotEmpty, IsOptional, IsString, IsUrl, MaxLength } from "class-validator";
 
 export class AdminBroadcastNotificationDto {
@@ -12,7 +13,9 @@ export class AdminBroadcastNotificationDto {
   body: string;
 
   @IsOptional()
+  @Transform(({ value }) => (typeof value === "string" ? value.trim() : value))
   @IsUrl({ require_protocol: true })
+  @MaxLength(2048)
   imageUrl?: string;
 
   @IsOptional()
