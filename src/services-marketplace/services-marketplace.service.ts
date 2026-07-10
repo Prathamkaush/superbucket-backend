@@ -17,6 +17,8 @@ import {
   CreateServiceBookingDto,
   CreateServiceCategoryDto,
   CreateServicePackageDto,
+  AcceptServiceRevisitDto,
+  RequestServiceRevisitDto,
   ReviewServiceBookingDto,
   UpdateProviderApprovalDto,
   UpdateProviderJobStatusDto,
@@ -290,6 +292,30 @@ export class ServicesMarketplaceService {
     });
   }
 
+  async acceptRevisit(customerId: number, id: number, dto: AcceptServiceRevisitDto) {
+    const booking = await this.getCustomerBooking(customerId, id);
+    if (booking.status !== ServiceBookingStatus.REVISIT_REQUESTED) {
+      throw new BadRequestException("No revisit request is pending for this booking");
+    }
+
+    const scheduledAt = new Date(dto.scheduledAt);
+    if (scheduledAt.getTime() < Date.now() + 30 * 60 * 1000) {
+      throw new BadRequestException("Choose a revisit time at least 30 minutes from now");
+    }
+
+    return this.prisma.serviceBooking.update({
+      where: { id },
+      data: {
+        status: ServiceBookingStatus.ACCEPTED,
+        scheduledAt,
+        revisitAcceptedAt: new Date(),
+        acceptedAt: new Date(),
+        startedAt: null,
+      },
+      include: { provider: { select: customerProviderSelect }, package: true },
+    });
+  }
+
   async reviewBooking(customerId: number, id: number, dto: ReviewServiceBookingDto) {
     const booking = await this.getCustomerBooking(customerId, id);
     if (booking.status !== ServiceBookingStatus.COMPLETED) {
@@ -417,6 +443,8 @@ export class ServicesMarketplaceService {
         id: true, bookingNumber: true, categoryName: true, serviceName: true,
         scheduledAt: true, address: true, customerNote: true, providerEarning: true,
         status: true, acceptedAt: true, startedAt: true, completedAt: true,
+        cancellationReason: true, cancelledAt: true,
+        revisitReason: true, revisitRequestedAt: true, revisitAcceptedAt: true,
         rating: true, review: true,
         customer: { select: { id: true, name: true, phone: true } },
       },
@@ -470,6 +498,37 @@ export class ServicesMarketplaceService {
       data.acceptedAt = null;
     }
     return this.prisma.serviceBooking.update({ where: { id }, data });
+  }
+
+  async requestRevisit(userId: number, id: number, dto: RequestServiceRevisitDto) {
+    const booking = await this.getProviderJob(userId, id);
+    if (
+      booking.status !== ServiceBookingStatus.EN_ROUTE &&
+      booking.status !== ServiceBookingStatus.IN_PROGRESS
+    ) {
+      throw new BadRequestException("Revisit can be requested only after travel has started");
+    }
+
+    return this.prisma.serviceBooking.update({
+      where: { id },
+      data: {
+        status: ServiceBookingStatus.REVISIT_REQUESTED,
+        revisitReason: dto.reason?.trim() || "Customer was not available at the address",
+        revisitRequestedAt: new Date(),
+      },
+    });
+  }
+
+  listBookingsForAdmin() {
+    return this.prisma.serviceBooking.findMany({
+      include: {
+        customer: { select: { id: true, name: true, phone: true } },
+        provider: { select: { id: true, name: true, phone: true } },
+        package: true,
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 100,
+    });
   }
 
   createCategory(dto: CreateServiceCategoryDto) {

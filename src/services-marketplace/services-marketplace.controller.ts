@@ -3,8 +3,9 @@ import { ServiceProviderStatus } from "@prisma/client";
 import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
 import {
-  CancelServiceBookingDto, CreateServiceBookingDto, CreateServiceCategoryDto,
-  CreateServicePackageDto, ReviewServiceBookingDto, SetProviderAvailabilityDto,
+  AcceptServiceRevisitDto, CancelServiceBookingDto, CreateServiceBookingDto,
+  CreateServiceCategoryDto, CreateServicePackageDto, RequestServiceRevisitDto,
+  ReviewServiceBookingDto, SetProviderAvailabilityDto,
   UpdateProviderApprovalDto, UpdateProviderJobStatusDto, UpdateServiceCategoryDto,
   UpdateServicePackageDto, UpsertProviderProfileDto,
 } from "./dto/service-marketplace.dto";
@@ -53,6 +54,12 @@ export class ServicesMarketplaceController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Patch("bookings/:id/revisit/accept")
+  acceptRevisit(@Req() req, @Param("id", ParseIntPipe) id: number, @Body() dto: AcceptServiceRevisitDto) {
+    return this.service.acceptRevisit(req.user.id, id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post("bookings/:id/review")
   review(@Req() req, @Param("id", ParseIntPipe) id: number, @Body() dto: ReviewServiceBookingDto) {
     return this.service.reviewBooking(req.user.id, id, dto);
@@ -94,6 +101,12 @@ export class ServicesMarketplaceController {
     return this.service.updateJobStatus(req.user.id, id, dto);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Patch("provider/jobs/:id/revisit")
+  requestRevisit(@Req() req, @Param("id", ParseIntPipe) id: number, @Body() dto: RequestServiceRevisitDto) {
+    return this.service.requestRevisit(req.user.id, id, dto);
+  }
+
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Get("admin/catalog")
   adminCatalog() { return this.service.getCatalog(true); }
@@ -121,6 +134,10 @@ export class ServicesMarketplaceController {
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Get("admin/providers")
   providers(@Query("status") status?: ServiceProviderStatus) { return this.service.listProviders(status); }
+
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @Get("admin/bookings")
+  adminBookings() { return this.service.listBookingsForAdmin(); }
 
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Patch("admin/providers/:id/status")

@@ -67,6 +67,14 @@ export class CancelServiceBookingDto {
   @IsString() @IsNotEmpty() reason: string;
 }
 
+export class RequestServiceRevisitDto {
+  @IsOptional() @IsString() reason?: string;
+}
+
+export class AcceptServiceRevisitDto {
+  @IsDateString() scheduledAt: string;
+}
+
 export class ReviewServiceBookingDto {
   @Type(() => Number) @IsInt() @Min(1) @Max(5) rating: number;
   @IsOptional() @IsString() review?: string;

@@ -54,6 +54,7 @@ enum ServiceBookingStatus {
   ACCEPTED
   EN_ROUTE
   IN_PROGRESS
+  REVISIT_REQUESTED
   COMPLETED
   CANCELLED
   REJECTED
@@ -318,6 +319,9 @@ model ServiceBooking {
   completionOtp       String
   acceptedAt          DateTime?
   startedAt           DateTime?
+  revisitReason       String?              @db.Text
+  revisitRequestedAt  DateTime?
+  revisitAcceptedAt   DateTime?
   completedAt         DateTime?
   cancelledAt         DateTime?
   rating              Int?
