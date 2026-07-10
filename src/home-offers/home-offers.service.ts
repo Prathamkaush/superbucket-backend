@@ -1,6 +1,10 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { CreateHomeOfferDto, UpdateHomeOfferDto } from "./dto/home-offer.dto";
+import {
+  CreateBusinessAdDto,
+  CreateHomeOfferDto,
+  UpdateHomeOfferDto,
+} from "./dto/home-offer.dto";
 
 @Injectable()
 export class HomeOffersService {
@@ -29,6 +33,30 @@ export class HomeOffersService {
 
   create(dto: CreateHomeOfferDto) {
     return this.prisma.homeOffer.create({ data: this.toData(dto) });
+  }
+
+  createBusinessAd(dto: CreateBusinessAdDto) {
+    const businessName = dto.businessName.trim();
+    const offerText = dto.offer?.trim();
+    const description = dto.description.trim();
+    const category = dto.category?.trim();
+    const phone = dto.phone.replace(/\D/g, "").slice(0, 10);
+
+    return this.prisma.homeOffer.create({
+      data: {
+        title: businessName,
+        subtitle: offerText || description,
+        buttonLabel: phone ? `Call ${phone}` : "Visit",
+        code: category || null,
+        icon: "business",
+        color: "#0B63CE",
+        imageUrl: dto.posterUrl?.trim() || null,
+        sortOrder: -10,
+        isActive: true,
+        startsAt: new Date(),
+        expiresAt: null,
+      },
+    });
   }
 
   async update(id: number, dto: UpdateHomeOfferDto) {
@@ -68,6 +96,7 @@ export class HomeOffersService {
       ...(dto.code !== undefined && { code: dto.code?.trim() || null }),
       ...(dto.icon !== undefined && { icon: dto.icon?.trim() || "tag" }),
       ...(dto.color !== undefined && { color: dto.color?.trim() || "#E30613" }),
+      ...(dto.imageUrl !== undefined && { imageUrl: dto.imageUrl?.trim() || null }),
       ...(dto.sortOrder !== undefined && { sortOrder: Number(dto.sortOrder) || 0 }),
       ...(dto.isActive !== undefined && { isActive: Boolean(dto.isActive) }),
       ...(dto.startsAt !== undefined && {

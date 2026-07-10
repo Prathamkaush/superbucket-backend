@@ -13,6 +13,7 @@ import {
 import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
 import { AdminGuard } from "../auth/admin.guard";
 import { CreateHomeOfferDto, UpdateHomeOfferDto } from "./dto/home-offer.dto";
+import { CreateBusinessAdDto } from "./dto/home-offer.dto";
 import { HomeOffersService } from "./home-offers.service";
 
 @Controller("home-offers")
@@ -22,6 +23,12 @@ export class PublicHomeOffersController {
   @Get()
   getActive() {
     return this.homeOffersService.getActiveOffers();
+  }
+
+  @Post("advertise-business")
+  @UseGuards(JwtAuthGuard)
+  createBusinessAd(@Body() dto: CreateBusinessAdDto) {
+    return this.homeOffersService.createBusinessAd(dto);
   }
 }
 

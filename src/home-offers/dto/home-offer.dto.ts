@@ -4,6 +4,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUrl,
   MaxLength,
 } from "class-validator";
 
@@ -37,6 +38,12 @@ export class CreateHomeOfferDto {
   color?: string;
 
   @IsOptional()
+  @IsString()
+  @IsUrl({ require_protocol: true })
+  @MaxLength(2048)
+  imageUrl?: string;
+
+  @IsOptional()
   @IsInt()
   sortOrder?: number;
 
@@ -54,3 +61,37 @@ export class CreateHomeOfferDto {
 }
 
 export class UpdateHomeOfferDto extends CreateHomeOfferDto {}
+
+export class CreateBusinessAdDto {
+  @IsString()
+  @MaxLength(80)
+  businessName: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  category?: string;
+
+  @IsString()
+  @MaxLength(140)
+  description: string;
+
+  @IsString()
+  @MaxLength(180)
+  address: string;
+
+  @IsString()
+  @MaxLength(15)
+  phone: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  offer?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsUrl({ require_protocol: true })
+  @MaxLength(2048)
+  posterUrl?: string;
+}

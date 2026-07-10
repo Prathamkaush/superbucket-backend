@@ -1055,6 +1055,7 @@ model HomeOffer {
   code        String?
   icon        String? @default("tag")
   color       String? @default("#E30613")
+  imageUrl    String? @db.Text
 
   sortOrder Int     @default(0)
   isActive  Boolean @default(true)
