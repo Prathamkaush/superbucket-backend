@@ -32,6 +32,7 @@ import { DeliveryPartnerModule } from './delivery-partner/delivery-partner.modul
 import { NotificationsModule } from './notifications/notifications.module';
 import { WalletModule } from './wallet/wallet.module';
 import { HomeOffersModule } from './home-offers/home-offers.module';
+import { AppCacheModule } from './cache/app-cache.module';
 
 
 
@@ -43,6 +44,7 @@ import { HomeOffersModule } from './home-offers/home-offers.module';
       secret: process.env.JWT_SECRET,
       signOptions: { expiresIn: "7d" },
     }),
+    AppCacheModule,
     
     PrismaModule,
     OrdersModule,

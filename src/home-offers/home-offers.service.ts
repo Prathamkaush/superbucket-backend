@@ -5,10 +5,14 @@ import {
   CreateHomeOfferDto,
   UpdateHomeOfferDto,
 } from "./dto/home-offer.dto";
+import { AppCacheService } from "../cache/app-cache.service";
 
 @Injectable()
 export class HomeOffersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private cache: AppCacheService,
+  ) {}
 
   getAdminOffers() {
     return this.prisma.homeOffer.findMany({
@@ -18,31 +22,36 @@ export class HomeOffersService {
 
   getActiveOffers() {
     const now = new Date();
-    return this.prisma.homeOffer.findMany({
-      where: {
-        isActive: true,
-        AND: [
-          { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
-          { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
-        ],
-      },
-      orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
-      take: 12,
-    });
+
+    return this.cache.getOrSet("home-offers:active", 60, () =>
+      this.prisma.homeOffer.findMany({
+        where: {
+          isActive: true,
+          AND: [
+            { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+            { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
+          ],
+        },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+        take: 12,
+      }),
+    );
   }
 
-  create(dto: CreateHomeOfferDto) {
-    return this.prisma.homeOffer.create({ data: this.toData(dto) });
+  async create(dto: CreateHomeOfferDto) {
+    const offer = await this.prisma.homeOffer.create({ data: this.toData(dto) });
+    await this.clearCache();
+    return offer;
   }
 
-  createBusinessAd(dto: CreateBusinessAdDto) {
+  async createBusinessAd(dto: CreateBusinessAdDto) {
     const businessName = dto.businessName.trim();
     const offerText = dto.offer?.trim();
     const description = dto.description.trim();
     const category = dto.category?.trim();
     const phone = dto.phone.replace(/\D/g, "").slice(0, 10);
 
-    return this.prisma.homeOffer.create({
+    const offer = await this.prisma.homeOffer.create({
       data: {
         title: businessName,
         subtitle: offerText || description,
@@ -57,27 +66,39 @@ export class HomeOffersService {
         expiresAt: null,
       },
     });
+    await this.clearCache();
+    return offer;
   }
 
   async update(id: number, dto: UpdateHomeOfferDto) {
     await this.ensureExists(id);
-    return this.prisma.homeOffer.update({
+    const offer = await this.prisma.homeOffer.update({
       where: { id },
       data: this.toData(dto),
     });
+    await this.clearCache();
+    return offer;
   }
 
   async toggle(id: number) {
     const offer = await this.ensureExists(id);
-    return this.prisma.homeOffer.update({
+    const updated = await this.prisma.homeOffer.update({
       where: { id },
       data: { isActive: !offer.isActive },
     });
+    await this.clearCache();
+    return updated;
   }
 
   async delete(id: number) {
     await this.ensureExists(id);
-    return this.prisma.homeOffer.delete({ where: { id } });
+    const deleted = await this.prisma.homeOffer.delete({ where: { id } });
+    await this.clearCache();
+    return deleted;
+  }
+
+  private clearCache() {
+    return this.cache.deleteByPrefix("home-offers:");
   }
 
   private async ensureExists(id: number) {

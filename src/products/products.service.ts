@@ -8,6 +8,7 @@ import { UpdateProductSeoDto } from './dto/update-product-seo.dto';
 import { Prisma } from '@prisma/client';
 import { SmartBulkProductParser } from './utils/enhanced-bulk-product-parser.util';
 import { ParsedProductRow } from './dto/bulk-upload-product.dto';
+import { AppCacheService } from '../cache/app-cache.service';
 
 function parseIdArray(value?: any, name?: string): number[] {
   if (!value) return [];
@@ -202,6 +203,7 @@ export class ProductsService {
   constructor(
     private prisma: PrismaService,
     private smartParser: SmartBulkProductParser,
+    private cache: AppCacheService,
   ) {}
 
   // ----------------------------------
@@ -394,7 +396,7 @@ export class ProductsService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const product = await this.prisma.$transaction(async (tx) => {
       const selectedType = typeId
         ? await tx.productType.findFirst({
             where: { id: typeId, categoryId },
@@ -589,12 +591,22 @@ export class ProductsService {
 
       return product;
     });
+    await this.clearProductCache();
+    return product;
   }
 
   // ----------------------------------
   // FIND ALL (FILTER + PAGINATION)
   // ----------------------------------
   async findAll(query: any) {
+    return this.cache.getOrSet(
+      this.cache.stableKey('products:list', query),
+      90,
+      () => this.findAllUncached(query),
+    );
+  }
+
+  private async findAllUncached(query: any) {
     const {
       page,
       limit,
@@ -1017,6 +1029,12 @@ export class ProductsService {
   // FIND ONE BY ID
   // ----------------------------------
   async findOne(id: number) {
+    return this.cache.getOrSet(`products:detail:${id}`, 180, () =>
+      this.findOneUncached(id),
+    );
+  }
+
+  private async findOneUncached(id: number) {
     const product = await this.prisma.product.findUnique({
       where: { id },
       select: {
@@ -1624,7 +1642,7 @@ export class ProductsService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1️⃣ Product core
       await tx.product.update({
         where: { id, isActive: true },
@@ -1759,6 +1777,8 @@ export class ProductsService {
 
       return { success: true };
     });
+    await this.clearProductCache();
+    return result;
   }
   // ----------------------------------
   // DELETE PRODUCT
@@ -1766,7 +1786,7 @@ export class ProductsService {
   async remove(id: number) {
     await this.findOne(id);
 
-    return this.prisma.product.update({
+    const product = await this.prisma.product.update({
       where: { id },
       data: {
         isActive: false,
@@ -1775,6 +1795,8 @@ export class ProductsService {
         discountValue: null,
       },
     });
+    await this.clearProductCache();
+    return product;
   }
   // ----------------------------------
   // UPDATE STOCK
@@ -1798,10 +1820,12 @@ export class ProductsService {
       throw new NotFoundException('Product not found');
     }
 
-    return this.prisma.product.update({
+    const updated = await this.prisma.product.update({
       where: { id: productId },
       data: { stock },
     });
+    await this.clearProductCache();
+    return updated;
   }
 
   // ----------------------------------
@@ -1854,13 +1878,15 @@ export class ProductsService {
       }
     }
 
-    return this.prisma.product.update({
+    const updated = await this.prisma.product.update({
       where: { id },
       data: {
         discountType,
         discountValue,
       },
     });
+    await this.clearProductCache();
+    return updated;
   }
 
   // ----------------------------------
@@ -1938,13 +1964,21 @@ export class ProductsService {
       throw new BadRequestException('No SEO fields provided');
     }
 
-    return this.prisma.product.update({
+    const updated = await this.prisma.product.update({
       where: { id },
       data,
     });
+    await this.clearProductCache();
+    return updated;
   }
 
   async getHomeTrending(limit = 8) {
+    return this.cache.getOrSet(`products:home-trending:${limit}`, 120, () =>
+      this.getHomeTrendingUncached(limit),
+    );
+  }
+
+  private async getHomeTrendingUncached(limit = 8) {
     const products = await this.prisma.product.findMany({
       where: {
         isActive: true,
@@ -1972,6 +2006,12 @@ export class ProductsService {
   }
 
   async getHomeDiscounts(limit = 8) {
+    return this.cache.getOrSet(`products:home-discounts:${limit}`, 120, () =>
+      this.getHomeDiscountsUncached(limit),
+    );
+  }
+
+  private async getHomeDiscountsUncached(limit = 8) {
     const products = await this.prisma.product.findMany({
       where: {
         isActive: true,
@@ -1997,6 +2037,10 @@ export class ProductsService {
       ...p,
       finalPrice: this.getFinalPrice(p),
     }));
+  }
+
+  private clearProductCache() {
+    return this.cache.deleteByPrefix('products:');
   }
 
   // ----------------------------------

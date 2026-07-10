@@ -16,12 +16,14 @@ import {
   LeadStatus,
 } from "@prisma/client";
 import { NotificationsService } from "../notifications/notifications.service";
+import { AppCacheService } from "../cache/app-cache.service";
 
 @Injectable()
 export class PropertiesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly cache: AppCacheService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -57,6 +59,7 @@ export class PropertiesService {
         ownerId: ownerId,
       },
     });
+    await this.clearPropertyCache();
     this.notifications.createAndSend({
       userId: ownerId,
       type: "PROPERTY_SUBMITTED",
@@ -143,10 +146,12 @@ export class PropertiesService {
       updateData.status = PropertyStatus.REVIEW;
     }
 
-    return this.prisma.property.update({
+    const updated = await this.prisma.property.update({
       where: { id },
       data: updateData,
     });
+    await this.clearPropertyCache();
+    return updated;
   }
 
   async deleteProperty(id: number, ownerId: number, userRole: string) {
@@ -165,6 +170,7 @@ export class PropertiesService {
     await this.prisma.property.delete({
       where: { id },
     });
+    await this.clearPropertyCache();
 
     return { message: "Property listing deleted successfully" };
   }
@@ -184,10 +190,12 @@ export class PropertiesService {
       );
     }
 
-    return this.prisma.property.update({
+    const updated = await this.prisma.property.update({
       where: { id },
       data: { isAdvertised: true },
     });
+    await this.clearPropertyCache();
+    return updated;
   }
 
   async updateOwnerPropertyStatus(
@@ -224,10 +232,12 @@ export class PropertiesService {
       throw new BadRequestException("Only verified listings can be made live");
     }
 
-    return this.prisma.property.update({
+    const updated = await this.prisma.property.update({
       where: { id },
       data: { status },
     });
+    await this.clearPropertyCache();
+    return updated;
   }
 
   async updateLeadStatus(leadId: number, ownerId: number, status: LeadStatus) {
@@ -257,27 +267,44 @@ export class PropertiesService {
   // -------------------------------------------------------------------------
 
   async findAdvertised() {
-    return this.prisma.property.findMany({
-      where: {
-        isAdvertised: true,
-        status: PropertyStatus.LIVE,
-      },
-      include: {
-        owner: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            phone: true,
+    return this.cache.getOrSet("properties:advertised", 120, () =>
+      this.prisma.property.findMany({
+        where: {
+          isAdvertised: true,
+          status: PropertyStatus.LIVE,
+        },
+        include: {
+          owner: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+            },
           },
         },
-      },
-      orderBy: { updatedAt: "desc" },
-      take: 5,
-    });
+        orderBy: { updatedAt: "desc" },
+        take: 5,
+      }),
+    );
   }
 
   async findAll(query: {
+    category?: PropertyCategory;
+    mode?: PropertyMode;
+    search?: string;
+    pincode?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    return this.cache.getOrSet(
+      this.cache.stableKey("properties:list", query),
+      90,
+      () => this.findAllUncached(query),
+    );
+  }
+
+  private async findAllUncached(query: {
     category?: PropertyCategory;
     mode?: PropertyMode;
     search?: string;
@@ -347,6 +374,16 @@ export class PropertiesService {
   }
 
   async findOne(id: number, incrementView = false) {
+    if (!incrementView) {
+      return this.cache.getOrSet(`properties:detail:${id}`, 180, () =>
+        this.findOneUncached(id, incrementView),
+      );
+    }
+
+    return this.findOneUncached(id, incrementView);
+  }
+
+  private async findOneUncached(id: number, incrementView = false) {
     const property = await this.prisma.property.findUnique({
       where: { id },
       include: {
@@ -483,6 +520,7 @@ export class PropertiesService {
     });
     this.notifications.notifyPropertyStatus(updated.ownerId, updated.id, true).catch(() => undefined);
     this.notifications.notifyNearbyProperty(updated).catch(() => undefined);
+    await this.clearPropertyCache();
     return updated;
   }
 
@@ -502,6 +540,11 @@ export class PropertiesService {
       },
     });
     this.notifications.notifyPropertyStatus(updated.ownerId, updated.id, false).catch(() => undefined);
+    await this.clearPropertyCache();
     return updated;
+  }
+
+  private clearPropertyCache() {
+    return this.cache.deleteByPrefix("properties:");
   }
 }

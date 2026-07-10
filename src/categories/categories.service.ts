@@ -2,21 +2,29 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
+import { AppCacheService } from '../cache/app-cache.service';
 
 @Injectable()
 export class CategoriesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private cache: AppCacheService,
+  ) {}
 
-  create(dto: CreateCategoryDto, image?: string) {
-    return this.prisma.category.create({
+  async create(dto: CreateCategoryDto, image?: string) {
+    const category = await this.prisma.category.create({
       data: { name: dto.name, image: image ?? dto.image },
     });
+    await this.clearCache();
+    return category;
   }
 
   findAll() {
-    return this.prisma.category.findMany({
-      orderBy: { id: 'asc' },
-    });
+    return this.cache.getOrSet('categories:all', 300, () =>
+      this.prisma.category.findMany({
+        orderBy: { id: 'asc' },
+      }),
+    );
   }
 
   async findOne(id: number) {
@@ -32,10 +40,12 @@ export class CategoriesService {
   async update(id: number, dto: UpdateCategoryDto) {
     await this.findOne(id);
 
-    return this.prisma.category.update({
+    const category = await this.prisma.category.update({
       where: { id },
       data: dto,
     });
+    await this.clearCache();
+    return category;
   }
 
   async remove(id: number) {
@@ -63,8 +73,14 @@ export class CategoriesService {
       );
     }
 
-    return this.prisma.category.delete({
+    const deleted = await this.prisma.category.delete({
       where: { id },
     });
+    await this.clearCache();
+    return deleted;
+  }
+
+  private clearCache() {
+    return this.cache.deleteByPrefix('categories:');
   }
 }
