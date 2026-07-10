@@ -447,6 +447,7 @@ export class PropertiesService {
       },
     });
     this.notifications.notifyPropertyStatus(updated.ownerId, updated.id, true).catch(() => undefined);
+    this.notifications.notifyNearbyProperty(updated).catch(() => undefined);
     return updated;
   }
 

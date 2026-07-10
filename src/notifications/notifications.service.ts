@@ -275,6 +275,64 @@ export class NotificationsService {
     });
   }
 
+  async notifyNearbyProperty(property: {
+    id: number;
+    ownerId: number;
+    title: string;
+    pincode?: string | null;
+    mode?: string | null;
+    price?: unknown;
+  }) {
+    if (!/^\d{6}$/.test(property.pincode || "")) {
+      return { recipients: 0 };
+    }
+
+    const pincodePrefix = property.pincode!.slice(0, 3);
+    const users = await this.prisma.user.findMany({
+      where: {
+        id: { not: property.ownerId },
+        role: UserRole.USER,
+        addresses: {
+          some: {
+            pincode: { startsWith: pincodePrefix },
+          },
+        },
+      },
+      select: { id: true },
+    });
+
+    if (!users.length) {
+      return { recipients: 0 };
+    }
+
+    const price = Number(property.price || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
+    const rentSuffix = property.mode === "RENT" ? "/mo" : "";
+    const payload: NotificationPayload = {
+      type: "PROPERTY_NEARBY",
+      title: "New property near you",
+      body: `${property.title} is now available near your saved address for Rs ${price}${rentSuffix}.`,
+      data: {
+        propertyId: property.id,
+        screen: "RentalDetail",
+        pincode: property.pincode,
+      },
+    };
+
+    await this.prisma.notification.createMany({
+      data: users.map((user) => ({
+        userId: user.id,
+        type: payload.type,
+        title: payload.title,
+        body: payload.body,
+        data: payload.data as Prisma.InputJsonValue,
+        sentAt: new Date(),
+      })),
+    });
+
+    await this.sendPushToUsers(users.map((user) => user.id), payload);
+    return { recipients: users.length };
+  }
+
   private async findAudienceUsers(audience: NotificationAudience) {
     if (audience === NotificationAudience.DELIVERY_PARTNERS) {
       return this.prisma.user.findMany({ where: { role: UserRole.DELIVERY_PARTNER }, select: { id: true } });
@@ -300,6 +358,60 @@ export class NotificationsService {
 
     const tokens = await this.prisma.pushDeviceToken.findMany({
       where,
+      select: { token: true },
+    });
+
+    if (!tokens.length) return;
+
+    const message = {
+      notification: {
+        title: payload.title,
+        body: payload.body,
+        ...(payload.imageUrl ? { imageUrl: payload.imageUrl } : {}),
+      },
+      data: Object.fromEntries(
+        Object.entries({
+          type: payload.type,
+          ...(payload.data || {}),
+        }).map(([key, value]) => [key, value == null ? "" : String(value)]),
+      ),
+      android: {
+        priority: "high" as const,
+        notification: {
+          channelId: "default",
+          ...(payload.imageUrl ? { imageUrl: payload.imageUrl } : {}),
+        },
+      },
+      tokens: tokens.map((item) => item.token),
+    };
+
+    const response = await firebaseAdmin.messaging().sendEachForMulticast(message);
+    const inactiveTokens = response.responses
+      .map((item, index) => ({ item, token: tokens[index]?.token }))
+      .filter(({ item }) => !item.success)
+      .filter(({ item }) => {
+        const code = item.error?.code || "";
+        return code.includes("registration-token-not-registered") || code.includes("invalid-registration-token");
+      })
+      .map(({ token }) => token)
+      .filter(Boolean) as string[];
+
+    if (inactiveTokens.length) {
+      await this.prisma.pushDeviceToken.updateMany({
+        where: { token: { in: inactiveTokens } },
+        data: { isActive: false },
+      });
+    }
+  }
+
+  private async sendPushToUsers(userIds: number[], payload: NotificationPayload) {
+    if (!this.firebaseReady || !userIds.length) return;
+
+    const tokens = await this.prisma.pushDeviceToken.findMany({
+      where: {
+        userId: { in: userIds },
+        isActive: true,
+      },
       select: { token: true },
     });
 
