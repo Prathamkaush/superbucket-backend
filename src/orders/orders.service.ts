@@ -61,7 +61,7 @@ export class OrdersService {
         where: { id: actor.id },
         select: { staffShopId: true },
       });
-      return picker?.staffShopId ?? undefined;
+      return picker?.staffShopId ?? -1;
     }
 
     return -1;
@@ -124,7 +124,7 @@ export class OrdersService {
     const where: any = {};
     const shopId = await this.getActorShopScope(actor);
     if (actor?.role === UserRole.PICKER && shopId !== undefined) {
-      where.OR = [{ shopId }, { shopId: null }];
+      where.shopId = shopId;
     } else if (shopId !== undefined) {
       where.shopId = shopId;
     }
@@ -184,8 +184,7 @@ export class OrdersService {
     if (!order) throw new NotFoundException("Order not found");
     if (
       shopId !== undefined &&
-      order.shopId !== shopId &&
-      !(actor?.role === UserRole.PICKER && order.shopId === null)
+      order.shopId !== shopId
     ) {
       throw new ForbiddenException("You can access only your shop orders");
     }
@@ -199,8 +198,7 @@ export class OrdersService {
   const shopId = await this.getActorShopScope(actor);
   if (
     shopId !== undefined &&
-    existing.shopId !== shopId &&
-    !(actor?.role === UserRole.PICKER && existing.shopId === null)
+    existing.shopId !== shopId
   ) {
     throw new ForbiddenException("You can update only your shop orders");
   }
@@ -238,18 +236,13 @@ export class OrdersService {
     data.confirmedAt = new Date();
     data.acceptedAt = new Date();
     if (actor?.id) data.acceptedById = actor.id;
-    if (actor?.role === UserRole.PICKER && existing.shopId === null && shopId !== undefined) {
-      data.shopId = shopId;
-    }
   }
 
   if (status === OrderStatus.SHIPPED) {
     data.shippedAt = new Date();
     data.dispatchedAt = new Date();
     if (actor?.id) data.dispatchedById = actor.id;
-    if (actor?.role === UserRole.PICKER && existing.shopId === null && shopId !== undefined) {
-      data.shopId = shopId;
-    } else if (existing.shopId === null) {
+    if (existing.shopId === null) {
       const nearestShop = await this.findNearestShop(existing.address);
       if (nearestShop?.id) data.shopId = nearestShop.id;
     }
@@ -410,6 +403,9 @@ async createOrder(
     payload.addressId
   );
   const assignedShop = await this.findNearestShop(address);
+  if (!assignedShop?.id) {
+    throw new BadRequestException("No nearby shop is available for this delivery address");
+  }
 
   const cart = await this.prisma.cartItem.findMany({
     where: { userId },
@@ -510,7 +506,7 @@ async createOrder(
         scheduledDeliveryAt,
         deliverySlotLabel,
         status: OrderStatus.PENDING,
-        shopId: assignedShop?.id ?? null,
+        shopId: assignedShop.id,
 
         // ✅ SNAPSHOT address (Amazon-style)
         address,
@@ -607,6 +603,7 @@ async createOrder(
   });
 
   this.notifications.notifyOrderCreated(userId, order).catch(() => undefined);
+  this.notifications.notifyNewOrderForStaff(order).catch(() => undefined);
 
   return {
     orderId: order.id,

@@ -235,8 +235,7 @@ export class NotificationsService {
     });
 
     if (order.status === OrderStatus.SHIPPED) {
-      await this.createAndSend({
-        audience: NotificationAudience.DELIVERY_PARTNERS,
+      await this.notifyDeliveryPartnersForOrder(order.id, {
         type: "DELIVERY_ORDER_READY",
         title: "New delivery available",
         body: `Order #${order.id} is ready for pickup.`,
@@ -273,6 +272,99 @@ export class NotificationsService {
       body: approved ? "Your property listing is now live." : "Your property listing was rejected by admin.",
       data: { propertyId, screen: "RenterPortal" },
     });
+  }
+
+  async notifyAdmins(type: string, title: string, body: string, data: NotificationPayload["data"] = {}) {
+    const admins = await this.prisma.user.findMany({
+      where: { role: UserRole.ADMIN },
+      select: { id: true },
+    });
+
+    return this.notifyUsers(
+      admins.map((admin) => admin.id),
+      { type, title, body, data },
+    );
+  }
+
+  async notifyNewUser(user: { id: number; name?: string | null; email?: string | null; phone?: string | null }) {
+    return this.notifyAdmins(
+      "ADMIN_NEW_USER",
+      "New user joined",
+      `${user.name || user.email || user.phone || "A new user"} joined Superbucket.`,
+      { userId: user.id, screen: "Users" },
+    );
+  }
+
+  async notifyStaffCreated(staff: { id: number; name?: string | null; role: UserRole }, actorId?: number) {
+    const admins = await this.prisma.user.findMany({
+      where: { role: UserRole.ADMIN },
+      select: { id: true },
+    });
+    const recipients = new Set(admins.map((admin) => admin.id));
+    if (actorId) recipients.add(actorId);
+
+    return this.notifyUsers(Array.from(recipients), {
+      type: `ADMIN_${staff.role}_CREATED`,
+      title: `${staff.role.replace("_", " ")} created`,
+      body: `${staff.name || "A staff member"} was added as ${staff.role.replace("_", " ").toLowerCase()}.`,
+      data: { staffId: staff.id, screen: "Staff", role: staff.role },
+    });
+  }
+
+  async notifyNewOrderForStaff(order: { id: number; finalAmount?: unknown; shopId?: number | null }) {
+    await this.notifyAdmins(
+      "ADMIN_NEW_ORDER",
+      "New order received",
+      `Order #${order.id} has been placed.`,
+      { orderId: order.id, screen: "Orders" },
+    );
+
+    if (!order.shopId) {
+      return { recipients: 0 };
+    }
+
+    const pickers = await this.prisma.user.findMany({
+      where: {
+        role: UserRole.PICKER,
+        staffShopId: order.shopId,
+      },
+      select: { id: true },
+    });
+
+    return this.notifyUsers(
+      pickers.map((picker) => picker.id),
+      {
+        type: "PICKER_NEW_ORDER",
+        title: "New order ready",
+        body: `Order #${order.id} is waiting for picker action.`,
+        data: { orderId: order.id, screen: "Orders" },
+      },
+    );
+  }
+
+  async notifyDeliveryPartnersForOrder(
+    orderId: number,
+    payload: Omit<NotificationPayload, "userId" | "audience">,
+  ) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { shopId: true },
+    });
+    if (!order?.shopId) return { recipients: 0 };
+
+    const partners = await this.prisma.user.findMany({
+      where: {
+        role: UserRole.DELIVERY_PARTNER,
+        isVerified: true,
+        staffShopId: order.shopId,
+      },
+      select: { id: true },
+    });
+
+    return this.notifyUsers(
+      partners.map((partner) => partner.id),
+      payload,
+    );
   }
 
   async notifyNearbyProperty(property: {
@@ -456,6 +548,30 @@ export class NotificationsService {
         data: { isActive: false },
       });
     }
+  }
+
+  private async notifyUsers(userIds: number[], payload: Omit<NotificationPayload, "userId">) {
+    const recipients = Array.from(new Set(userIds)).filter(Boolean);
+    if (!recipients.length) {
+      return { recipients: 0 };
+    }
+
+    const imageUrl = normalizeImageUrl(payload.imageUrl);
+    await this.prisma.notification.createMany({
+      data: recipients.map((userId) => ({
+        userId,
+        type: payload.type,
+        title: payload.title,
+        body: payload.body,
+        imageUrl,
+        data: (payload.data || undefined) as Prisma.InputJsonValue | undefined,
+        sentAt: new Date(),
+        createdById: payload.createdById,
+      })),
+    });
+
+    await this.sendPushToUsers(recipients, { ...payload, imageUrl });
+    return { recipients: recipients.length };
   }
 
   private audienceWhere(audience: NotificationAudience): Prisma.UserWhereInput {

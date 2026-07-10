@@ -206,17 +206,18 @@ export class PropertiesService {
     }
 
     const ownerEditableStatuses: PropertyStatus[] = [
+      PropertyStatus.DRAFT,
       PropertyStatus.LIVE,
       PropertyStatus.SOLD,
       PropertyStatus.RENTED,
     ];
 
     if (!ownerEditableStatuses.includes(status)) {
-      throw new BadRequestException("Owner can set only LIVE, SOLD, or RENTED status");
+      throw new BadRequestException("Owner can set only DRAFT, LIVE, SOLD, or RENTED status");
     }
 
-    if (!ownerEditableStatuses.includes(property.status)) {
-      throw new BadRequestException("Only approved live listings can be marked available, sold, or rented");
+    if (property.status === PropertyStatus.REVIEW) {
+      throw new BadRequestException("Listings under admin review cannot be changed by owner");
     }
 
     if (status === PropertyStatus.LIVE && property.verification !== PropertyVerification.VERIFIED) {
@@ -425,8 +426,42 @@ export class PropertiesService {
             phone: true,
           },
         },
+        leads: {
+          select: {
+            id: true,
+            status: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: "desc" },
+        },
+        _count: { select: { leads: true } },
       },
       orderBy: { createdAt: "asc" },
+    });
+  }
+
+  async adminFindAll() {
+    return this.prisma.property.findMany({
+      include: {
+        owner: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+          },
+        },
+        leads: {
+          select: {
+            id: true,
+            status: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: "desc" },
+        },
+        _count: { select: { leads: true } },
+      },
+      orderBy: { createdAt: "desc" },
     });
   }
 

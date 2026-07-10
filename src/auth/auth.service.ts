@@ -7,6 +7,7 @@ import { GoogleProfile } from "./strategies/google.strategy";
 import { OAuth2Client } from "google-auth-library";
 import axios from "axios";
 import { randomInt } from "crypto";
+import { NotificationsService } from "../notifications/notifications.service";
 
 type OtpChallenge = {
   purpose: "phone_otp";
@@ -21,7 +22,8 @@ export class AuthService {
 
   constructor(
     private prisma: PrismaService,
-    private jwtService: JwtService
+    private jwtService: JwtService,
+    private notifications: NotificationsService,
   ) {}
 
   private normalizeIndianPhone(value: string) {
@@ -165,6 +167,7 @@ export class AuthService {
       );
     }
 
+    const existingOtpUser = await this.prisma.user.findUnique({ where: { phone: challenge.phone } });
     const user = await this.prisma.user.upsert({
       where: { phone: challenge.phone },
       update: { isVerified: true },
@@ -175,6 +178,9 @@ export class AuthService {
         role: UserRole.USER,
       },
     });
+    if (!existingOtpUser) {
+      this.notifications.notifyNewUser(user).catch(() => undefined);
+    }
 
     const token = this.jwtService.sign({
       sub: user.id,
@@ -250,6 +256,7 @@ export class AuthService {
         role: UserRole.USER,
       },
     });
+    this.notifications.notifyNewUser(user).catch(() => undefined);
 
     const token = this.jwtService.sign({
       sub: user.id,
@@ -315,6 +322,12 @@ export class AuthService {
         createdAt: true,
       },
     });
+    this.notifications.notifyAdmins(
+      "ADMIN_DELIVERY_PARTNER_REGISTERED",
+      "Delivery partner registered",
+      `${user.name || "A delivery partner"} is waiting for admin approval.`,
+      { userId: user.id, screen: "Staff", role: user.role },
+    ).catch(() => undefined);
 
     return {
       message: "Registration submitted. Admin approval is required before login.",
@@ -337,6 +350,7 @@ export class AuthService {
 
     let user = existingByGoogleId;
 
+    let createdGoogleUser = false;
     if (!user) {
       const existingByEmail = await this.prisma.user.findUnique({
         where: { email },
@@ -362,6 +376,10 @@ export class AuthService {
               role: UserRole.USER,
             },
           });
+      createdGoogleUser = !existingByEmail;
+    }
+    if (createdGoogleUser) {
+      this.notifications.notifyNewUser(user).catch(() => undefined);
     }
 
     const token = this.jwtService.sign({

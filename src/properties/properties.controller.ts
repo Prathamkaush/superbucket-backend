@@ -262,6 +262,14 @@ export class PropertiesController {
     return this.propertiesService.adminFindPending();
   }
 
+  @ApiOperation({ summary: "List all property listings with statuses (Admin only)" })
+  @ApiBearerAuth("JWT-auth")
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @Get("admin/all")
+  adminFindAll() {
+    return this.propertiesService.adminFindAll();
+  }
+
   @ApiOperation({ summary: "Approve a property listing (Admin only)" })
   @ApiBearerAuth("JWT-auth")
   @UseGuards(JwtAuthGuard, AdminGuard)

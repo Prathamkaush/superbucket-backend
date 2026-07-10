@@ -26,6 +26,14 @@ export class DeliveryPartnerService {
     }
   }
 
+  private async getAssignedShopId(actorId: number) {
+    const partner = await this.prisma.user.findUnique({
+      where: { id: actorId },
+      select: { staffShopId: true },
+    });
+    return partner?.staffShopId ?? null;
+  }
+
   private orderSelect() {
     return {
       id: true,
@@ -105,9 +113,12 @@ export class DeliveryPartnerService {
 
   async getReadyOrders(actor: { id: number; role: UserRole }) {
     this.assertDeliveryPartner(actor);
+    const shopId = await this.getAssignedShopId(actor.id);
+    if (!shopId) return [];
 
     return this.prisma.order.findMany({
       where: {
+        shopId,
         status: OrderStatus.SHIPPED,
         deliveryPartnerId: null,
         OR: [
@@ -136,6 +147,10 @@ export class DeliveryPartnerService {
 
     const order = await this.prisma.order.findUnique({ where: { id: orderId } });
     if (!order) throw new NotFoundException("Order not found");
+    const shopId = await this.getAssignedShopId(actor.id);
+    if (!shopId || order.shopId !== shopId) {
+      throw new ForbiddenException("You can accept only deliveries from your assigned shop");
+    }
     if (order.status !== OrderStatus.SHIPPED) {
       throw new BadRequestException("Order is not ready for delivery pickup");
     }

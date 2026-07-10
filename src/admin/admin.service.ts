@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/com
 import { PrismaService } from "../prisma/prisma.service";
 import { Prisma, UserRole } from "@prisma/client";
 import * as bcrypt from "bcrypt";
+import { NotificationsService } from "../notifications/notifications.service";
 
 function toCoordinate(value: any, label: string, min: number, max: number) {
   if (value === undefined || value === null || value === "") return null;
@@ -14,7 +15,10 @@ function toCoordinate(value: any, label: string, min: number, max: number) {
 
 @Injectable()
 export class AdminService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+  ) {}
 
   private normalizeEmail(email: string) {
     const normalized = String(email || "").trim().toLowerCase();
@@ -80,11 +84,15 @@ export class AdminService {
     }
 
     const staffShopId =
-      role === UserRole.PICKER
+      (role === UserRole.PICKER || role === UserRole.DELIVERY_PARTNER)
         ? actor.role === UserRole.SUB_ADMIN
           ? await this.getOwnedShopId(actor.id)
           : body.shopId
         : undefined;
+
+    if ((role === UserRole.PICKER || role === UserRole.DELIVERY_PARTNER) && !staffShopId) {
+      throw new BadRequestException(`${role.replace("_", " ")} must be assigned to a shop`);
+    }
 
     let staff;
     try {
@@ -129,6 +137,8 @@ export class AdminService {
         ownerId: staff.id,
       });
     }
+
+    this.notifications.notifyStaffCreated(staff, actor.id).catch(() => undefined);
 
     return staff;
   }
@@ -286,6 +296,51 @@ export class AdminService {
       },
     });
   }
+
+  async updateStaffShop(
+    actor: { id: number; role: UserRole },
+    id: number,
+    shopId: number,
+  ) {
+    const staff = await this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true, role: true, createdById: true },
+    });
+
+    if (!staff || !([UserRole.PICKER, UserRole.DELIVERY_PARTNER] as UserRole[]).includes(staff.role)) {
+      throw new BadRequestException("Only pickers and delivery partners can be assigned to a shop");
+    }
+
+    const shop = await this.prisma.shop.findUnique({
+      where: { id: Number(shopId) },
+      select: { id: true, ownerId: true },
+    });
+    if (!shop) throw new BadRequestException("Shop not found");
+
+    if (actor.role === UserRole.SUB_ADMIN && shop.ownerId !== actor.id) {
+      throw new ForbiddenException("You can assign staff only to your own shop");
+    }
+
+    if (actor.role !== UserRole.ADMIN && actor.role !== UserRole.SUB_ADMIN) {
+      throw new ForbiddenException("Admin or sub-admin access only");
+    }
+
+    return this.prisma.user.update({
+      where: { id },
+      data: { staffShopId: shop.id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        role: true,
+        isVerified: true,
+        createdAt: true,
+        staffShop: { select: { id: true, name: true, pincode: true } },
+      },
+    });
+  }
+
 
   async getPickerMonthlyReport(actor: { id: number; role: UserRole }, month?: string) {
     const base = month && /^\d{4}-\d{2}$/.test(month) ? `${month}-01` : new Date().toISOString().slice(0, 7) + "-01";

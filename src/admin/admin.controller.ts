@@ -111,6 +111,16 @@ export class AdminController {
     return this.adminService.updateDeliveryPartnerVerification(req.user, id, body.isVerified);
   }
 
+  @Patch("staff/:id/shop")
+  @UseGuards(AdminOrSubAdminGuard)
+  updateStaffShop(
+    @Req() req: any,
+    @Param("id", ParseIntPipe) id: number,
+    @Body() body: { shopId: number },
+  ) {
+    return this.adminService.updateStaffShop(req.user, id, Number(body.shopId));
+  }
+
   @Get("reports/pickers")
   @UseGuards(AdminOrSubAdminGuard)
   getPickerReports(@Req() req: any, @Query("month") month?: string) {
