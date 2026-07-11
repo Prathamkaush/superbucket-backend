@@ -323,16 +323,21 @@ export class NotificationsService {
       return { recipients: 0 };
     }
 
-    const pickers = await this.prisma.user.findMany({
-      where: {
-        role: UserRole.PICKER,
-        staffShopId: order.shopId,
-      },
-      select: { id: true },
-    });
+    const [pickers, shop] = await Promise.all([
+      this.prisma.user.findMany({
+        where: { role: UserRole.PICKER, staffShopId: order.shopId },
+        select: { id: true },
+      }),
+      this.prisma.shop.findUnique({
+        where: { id: order.shopId },
+        select: { ownerId: true },
+      }),
+    ]);
+    const recipients = pickers.map((picker) => picker.id);
+    if (shop?.ownerId) recipients.push(shop.ownerId);
 
     return this.notifyUsers(
-      pickers.map((picker) => picker.id),
+      recipients,
       {
         type: "PICKER_NEW_ORDER",
         title: "New order ready",

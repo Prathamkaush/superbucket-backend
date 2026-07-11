@@ -25,27 +25,19 @@ export class ReviewsService {
       throw new NotFoundException("Product not found");
     }
 
-    let orderId: number | null = null;
+    const deliveredOrder = await this.prisma.order.findFirst({
+      where: {
+        ...(dto.orderId ? { id: dto.orderId } : {}),
+        userId,
+        status: "DELIVERED",
+        items: { some: { productId: dto.productId } },
+      },
+      orderBy: { deliveredAt: "desc" },
+      select: { id: true },
+    });
 
-    if (dto.orderId) {
-      const order = await this.prisma.order.findFirst({
-        where: {
-          id: dto.orderId,
-          userId,
-          items: {
-            some: {
-              productId: dto.productId,
-            },
-          },
-        },
-        select: { id: true },
-      });
-
-      if (!order) {
-        throw new ForbiddenException("Product not in this order");
-      }
-
-      orderId = order.id;
+    if (!deliveredOrder) {
+      throw new ForbiddenException("You can review this product after it has been delivered");
     }
 
     const exists = await this.prisma.review.findFirst({
@@ -65,7 +57,7 @@ export class ReviewsService {
         comment: dto.comment,
         user: { connect: { id: userId } },
         product: { connect: { id: dto.productId } },
-        ...(orderId ? { order: { connect: { id: orderId } } } : {}),
+        order: { connect: { id: deliveredOrder.id } },
       },
     });
   }

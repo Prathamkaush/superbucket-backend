@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -11,6 +12,15 @@ import { NotificationsService } from "../notifications/notifications.service";
 function toNumber(value: any) {
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
+}
+
+function deliveryArea(value: any) {
+  const address = value && typeof value === "object" ? value : {};
+  return {
+    city: address.city || null,
+    state: address.state || null,
+    pincode: address.pincode || null,
+  };
 }
 
 @Injectable()
@@ -53,7 +63,6 @@ export class DeliveryPartnerService {
       deliveryLatitude: true,
       deliveryLongitude: true,
       deliveryLocationUpdatedAt: true,
-      deliveryOtp: true,
       deliveryOtpVerifiedAt: true,
       deliveryMode: true,
       scheduledDeliveryAt: true,
@@ -116,7 +125,7 @@ export class DeliveryPartnerService {
     const shopId = await this.getAssignedShopId(actor.id);
     if (!shopId) return [];
 
-    return this.prisma.order.findMany({
+    const orders = await this.prisma.order.findMany({
       where: {
         shopId,
         status: OrderStatus.SHIPPED,
@@ -130,16 +139,34 @@ export class DeliveryPartnerService {
       select: this.orderSelect(),
       orderBy: { dispatchedAt: "asc" },
     });
+    // Before acceptance, expose only the delivery area—not the customer's
+    // exact street, phone, name, or coordinates.
+    return orders.map((order) => ({
+      ...order,
+      address: deliveryArea(order.address),
+      user: { id: order.user.id },
+    }));
   }
 
   async getMyOrders(actor: { id: number; role: UserRole }) {
     this.assertDeliveryPartner(actor);
 
-    return this.prisma.order.findMany({
+    const orders = await this.prisma.order.findMany({
       where: { deliveryPartnerId: actor.id },
       select: this.orderSelect(),
       orderBy: { createdAt: "desc" },
     });
+    return orders.map((order) => order.status === OrderStatus.SHIPPED
+      ? { ...order, shop: null, dispatchedBy: null }
+      : {
+          ...order,
+          shop: null,
+          dispatchedBy: null,
+          address: deliveryArea(order.address),
+          deliveryLatitude: null,
+          deliveryLongitude: null,
+        },
+    );
   }
 
   async acceptOrder(orderId: number, actor: { id: number; role: UserRole }) {
@@ -158,9 +185,16 @@ export class DeliveryPartnerService {
       throw new BadRequestException("Order is already assigned to another delivery partner");
     }
 
-    const updated = await this.prisma.order.update({
+    if (!order.deliveryPartnerId) {
+      const claimed = await this.prisma.order.updateMany({
+        where: { id: orderId, status: OrderStatus.SHIPPED, deliveryPartnerId: null },
+        data: { deliveryPartnerId: actor.id },
+      });
+      if (!claimed.count) throw new ConflictException("This delivery was accepted by another partner");
+    }
+
+    const updated = await this.prisma.order.findUniqueOrThrow({
       where: { id: orderId },
-      data: { deliveryPartnerId: actor.id },
       select: this.orderSelect(),
     });
     this.notifications.createAndSend({
@@ -170,7 +204,7 @@ export class DeliveryPartnerService {
       body: `${updated.deliveryPartner?.name || "Your delivery partner"} accepted order #${updated.id}.`,
       data: { orderId: updated.id, screen: "OrderTracking" },
     }).catch(() => undefined);
-    return updated;
+    return { ...updated, shop: null, dispatchedBy: null };
   }
 
   async updateLocation(
@@ -190,10 +224,10 @@ export class DeliveryPartnerService {
     if (
       latitude === null ||
       longitude === null ||
-      latitude < -90 ||
-      latitude > 90 ||
-      longitude < -180 ||
-      longitude > 180
+      latitude < 6 ||
+      latitude > 38 ||
+      longitude < 68 ||
+      longitude > 98
     ) {
       throw new BadRequestException("Valid latitude and longitude are required");
     }
@@ -204,7 +238,7 @@ export class DeliveryPartnerService {
       throw new ForbiddenException("You can update only your assigned deliveries");
     }
 
-    return this.prisma.order.update({
+    const updated = await this.prisma.order.update({
       where: { id: orderId },
       data: {
         deliveryLatitude: latitude,
@@ -219,6 +253,7 @@ export class DeliveryPartnerService {
       },
       select: this.orderSelect(),
     });
+    return { ...updated, shop: null, dispatchedBy: null };
   }
 
   async markDelivered(orderId: number, actor: { id: number; role: UserRole }, otpValue?: string) {
@@ -254,6 +289,13 @@ export class DeliveryPartnerService {
       userId: updated.user.id,
       status: OrderStatus.DELIVERED,
     }).catch(() => undefined);
-    return updated;
+    return {
+      ...updated,
+      shop: null,
+      dispatchedBy: null,
+      address: deliveryArea(updated.address),
+      deliveryLatitude: null,
+      deliveryLongitude: null,
+    };
   }
 }

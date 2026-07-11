@@ -67,6 +67,12 @@ export class PropertiesService {
       body: "Your property listing was submitted for admin review.",
       data: { propertyId: property.id, screen: "RenterPortal" },
     }).catch(() => undefined);
+    this.notifications.notifyAdmins(
+      "ADMIN_PROPERTY_SUBMITTED",
+      "New property awaiting review",
+      `${property.title} was submitted for approval.`,
+      { propertyId: property.id, screen: "Properties" },
+    ).catch(() => undefined);
     return property;
   }
 

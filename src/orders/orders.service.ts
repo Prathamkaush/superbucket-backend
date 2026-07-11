@@ -69,8 +69,13 @@ export class OrdersService {
 
   private async findNearestShop(address: any) {
     const pincode = String(address?.pincode || "").trim();
-    const userLat = toNumber(address?.latitude ?? address?.lat);
-    const userLng = toNumber(address?.longitude ?? address?.lng);
+    const rawUserLat = toNumber(address?.latitude ?? address?.lat);
+    const rawUserLng = toNumber(address?.longitude ?? address?.lng);
+    const hasValidIndiaCoordinates =
+      rawUserLat !== null && rawUserLng !== null &&
+      rawUserLat >= 6 && rawUserLat <= 38 && rawUserLng >= 68 && rawUserLng <= 98;
+    const userLat = hasValidIndiaCoordinates ? rawUserLat : null;
+    const userLng = hasValidIndiaCoordinates ? rawUserLng : null;
 
     const shops = await this.prisma.shop.findMany({
       where: {
@@ -110,7 +115,7 @@ export class OrdersService {
         .filter((shop) => shop.distanceKm <= shop.radiusKm)
         .sort((a, b) => a.distanceKm - b.distanceKm);
 
-      if (nearby.length) return nearby[0];
+      return nearby[0] ?? null;
     }
 
     const exactPincode = shops.find((shop) => shop.pincode === pincode);
@@ -147,7 +152,7 @@ export class OrdersService {
         skip,
         take: Number(limit),
         include: {
-          user: true,
+          user: { select: { id: true, name: true, phone: true, email: true } },
           acceptedBy: { select: { id: true, name: true, email: true } },
           dispatchedBy: { select: { id: true, name: true, email: true } },
           fulfilledBy: { select: { id: true, name: true, email: true } },
@@ -172,7 +177,7 @@ export class OrdersService {
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: {
-        user: true,
+        user: { select: { id: true, name: true, phone: true, email: true } },
         acceptedBy: { select: { id: true, name: true, email: true } },
         dispatchedBy: { select: { id: true, name: true, email: true } },
         fulfilledBy: { select: { id: true, name: true, email: true } },
@@ -302,7 +307,7 @@ async updateDeliveryLocation(
   const latitude = toNumber(body.latitude);
   const longitude = toNumber(body.longitude);
 
-  if (latitude === null || longitude === null || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+  if (latitude === null || longitude === null || latitude < 6 || latitude > 38 || longitude < 68 || longitude > 98) {
     throw new BadRequestException("Valid latitude and longitude are required");
   }
 
@@ -607,14 +612,6 @@ async createOrder(
 
   return {
     orderId: order.id,
-    shop: assignedShop
-      ? {
-          id: assignedShop.id,
-          name: assignedShop.name,
-          pincode: assignedShop.pincode,
-          distanceKm: "distanceKm" in assignedShop ? assignedShop.distanceKm : null,
-        }
-      : null,
     itemsTotal,
     gstTotal,
     shippingCharge,
@@ -664,12 +661,8 @@ async getMyOrders(userId: number, page = 1, limit = 5) {
         deliveryMode: true,
         scheduledDeliveryAt: true,
         deliverySlotLabel: true,
-        shop: {
-          select: {
-            id: true,
-            name: true,
-            pincode: true,
-          },
+        deliveryPartner: {
+          select: { id: true, name: true, phone: true },
         },
 
         items: {
@@ -711,8 +704,18 @@ async getMyOrders(userId: number, page = 1, limit = 5) {
   ]);
 
   return {
-  orders: orders.map(o => ({
+  orders: orders.map(o => {
+    const canTrackRider = o.status === OrderStatus.SHIPPED && Boolean(o.deliveryPartner);
+    return {
     ...o,
+    ...(!canTrackRider && {
+      deliveryPartner: null,
+      deliveryPartnerName: null,
+      deliveryPartnerPhone: null,
+      deliveryLatitude: null,
+      deliveryLongitude: null,
+      deliveryLocationUpdatedAt: null,
+    }),
     pricing: {
       itemsSubtotal: o.totalAmount,
       gst: o.totalGst,
@@ -720,7 +723,7 @@ async getMyOrders(userId: number, page = 1, limit = 5) {
       couponDiscount: o.couponDiscount ?? 0,
       payable: o.finalAmount,
     },
-  })),
+  }}),
   page,
   pages: Math.ceil(total / limit),
   total,
@@ -762,14 +765,8 @@ async getMyOrderById(orderId: number, userId: number) {
       deliveryMode: true,
       scheduledDeliveryAt: true,
       deliverySlotLabel: true,
-      shop: {
-        select: {
-          id: true,
-          name: true,
-          pincode: true,
-          latitude: true,
-          longitude: true,
-        },
+      deliveryPartner: {
+        select: { id: true, name: true, phone: true },
       },
 
       address: true,
@@ -816,8 +813,17 @@ async getMyOrderById(orderId: number, userId: number) {
     throw new NotFoundException("Order not found");
   }
 
+  const canTrackRider = order.status === OrderStatus.SHIPPED && Boolean(order.deliveryPartner);
   return {
   ...order,
+  ...(!canTrackRider && {
+    deliveryPartner: null,
+    deliveryPartnerName: null,
+    deliveryPartnerPhone: null,
+    deliveryLatitude: null,
+    deliveryLongitude: null,
+    deliveryLocationUpdatedAt: null,
+  }),
   pricing: {
     itemsSubtotal: order.totalAmount,
     gst: order.totalGst,

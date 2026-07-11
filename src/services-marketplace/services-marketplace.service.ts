@@ -12,6 +12,7 @@ import {
 } from "@prisma/client";
 import { randomInt } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import {
   CancelServiceBookingDto,
   CreateServiceBookingDto,
@@ -49,7 +50,10 @@ const customerProviderSelect = {
 
 @Injectable()
 export class ServicesMarketplaceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   getCatalog(includeInactive = false) {
     return this.prisma.serviceCategory.findMany({
@@ -202,7 +206,7 @@ export class ServicesMarketplaceService {
       providerId = dto.providerId;
     }
 
-    return this.prisma.serviceBooking.create({
+    const booking = await this.prisma.serviceBooking.create({
       data: {
         bookingNumber,
         customerId,
@@ -222,6 +226,13 @@ export class ServicesMarketplaceService {
       },
       include: { package: true },
     });
+    this.notifications.notifyAdmins(
+      "ADMIN_SERVICE_ORDER_CREATED",
+      "New service order",
+      `${booking.serviceName} was booked as ${booking.bookingNumber}.`,
+      { bookingId: booking.id, screen: "Services" },
+    ).catch(() => undefined);
+    return booking;
   }
 
   private async attachProviderRatings(bookings: any[]) {

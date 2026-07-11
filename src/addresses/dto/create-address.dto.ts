@@ -6,6 +6,8 @@ import {
   Matches,
   MaxLength,
   IsNumber,
+  Min,
+  Max,
 } from "class-validator";
 
 export class CreateAddressDto {
@@ -49,9 +51,13 @@ export class CreateAddressDto {
 
   @IsOptional()
   @IsNumber()
+  @Min(6)
+  @Max(38)
   latitude?: number;
 
   @IsOptional()
   @IsNumber()
+  @Min(68)
+  @Max(98)
   longitude?: number;
 }

@@ -15,7 +15,7 @@ import { OrdersService } from "./orders.service";
 import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
 import { UpdateOrderStatusDto } from "./dto/update-order-status.dto";
 import {PreviewOrderDto} from "./dto/preview-order.dto"
-import { AdminStaffGuard } from "../auth/admin.guard";
+import { AdminGuard, AdminStaffGuard } from "../auth/admin.guard";
 
 // ✅ Swagger imports
 import {
@@ -140,7 +140,7 @@ export class OrdersController {
     description: "Staff endpoint to save the latest delivery partner location for user tracking",
   })
   @ApiBearerAuth("JWT-auth")
-  @UseGuards(JwtAuthGuard, AdminStaffGuard)
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @Put(":id/delivery-location")
   updateDeliveryLocation(
     @Param("id") id: string,

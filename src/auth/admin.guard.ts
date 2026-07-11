@@ -41,7 +41,7 @@ export class AdminStaffGuard implements CanActivate {
     const req = context.switchToHttp().getRequest();
     if (req.method === "OPTIONS") return true;
 
-    if (!hasRole(req.user, ["ADMIN", "SUB_ADMIN", "PICKER", "DELIVERY_PARTNER"])) {
+    if (!hasRole(req.user, ["ADMIN", "SUB_ADMIN", "PICKER"])) {
       throw new ForbiddenException("Staff access only");
     }
 

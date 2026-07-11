@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateAddressDto } from "./dto/create-address.dto";
 import { UpdateAddressDto } from "./dto/update-address.dto";
@@ -9,7 +9,12 @@ export class AddressesService {
 
   /* CREATE */
   async create(userId: number, dto: CreateAddressDto) {
-    if (dto.isDefault) {
+    if ((dto.latitude == null) !== (dto.longitude == null)) {
+      throw new BadRequestException("Both latitude and longitude are required together");
+    }
+    const addressCount = await this.prisma.userAddress.count({ where: { userId } });
+    const isDefault = addressCount === 0 || Boolean(dto.isDefault);
+    if (isDefault) {
       await this.prisma.userAddress.updateMany({
         where: { userId },
         data: { isDefault: false },
@@ -19,6 +24,7 @@ export class AddressesService {
     return this.prisma.userAddress.create({
       data: {
         ...dto,
+        isDefault,
         userId,
       },      
     });
@@ -50,7 +56,12 @@ export class AddressesService {
 
   /* UPDATE */
   async update(id: number, userId: number, dto: UpdateAddressDto) {
-    await this.findOne(id, userId);
+    const existing = await this.findOne(id, userId);
+    const nextLatitude = dto.latitude !== undefined ? dto.latitude : existing.latitude;
+    const nextLongitude = dto.longitude !== undefined ? dto.longitude : existing.longitude;
+    if ((nextLatitude == null) !== (nextLongitude == null)) {
+      throw new BadRequestException("Both latitude and longitude are required together");
+    }
 
     if (dto.isDefault) {
       await this.prisma.userAddress.updateMany({
@@ -61,17 +72,36 @@ export class AddressesService {
 
     return this.prisma.userAddress.update({
       where: { id },
-      data: dto,
+      data: {
+        ...dto,
+        // A user must always retain one default address while addresses exist.
+        ...(existing.isDefault && dto.isDefault === false && { isDefault: true }),
+      },
     });
   }
 
   /* DELETE */
   async remove(id: number, userId: number) {
-    await this.findOne(id, userId);
-
-    return this.prisma.userAddress.delete({
+    const address = await this.findOne(id, userId);
+    const removed = await this.prisma.userAddress.delete({
       where: { id },
     });
+
+    if (address.isDefault) {
+      const nextAddress = await this.prisma.userAddress.findFirst({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      });
+      if (nextAddress) {
+        await this.prisma.userAddress.update({
+          where: { id: nextAddress.id },
+          data: { isDefault: true },
+        });
+      }
+    }
+
+    return removed;
   }
 
   /* SET DEFAULT */
