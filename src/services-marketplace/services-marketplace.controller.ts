@@ -1,4 +1,9 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, NotFoundException, Param, ParseIntPipe, Patch, Post, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { diskStorage } from "multer";
+import { existsSync, mkdirSync } from "fs";
+import { basename, extname, join } from "path";
+import type { Response } from "express";
 import { ServiceProviderStatus } from "@prisma/client";
 import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
@@ -14,6 +19,37 @@ import { ServicesMarketplaceService } from "./services-marketplace.service";
 @Controller("services")
 export class ServicesMarketplaceController {
   constructor(private readonly service: ServicesMarketplaceService) {}
+
+  private static categoryImageStorage = diskStorage({
+    destination: (_req, _file, cb) => {
+      const uploadPath = join(process.cwd(), "uploads", "services");
+      mkdirSync(uploadPath, { recursive: true });
+      cb(null, uploadPath);
+    },
+    filename: (_req, file, cb) => {
+      const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+      cb(null, unique + extname(file.originalname).toLowerCase());
+    },
+  });
+
+  private static categoryImageUpload = {
+    storage: ServicesMarketplaceController.categoryImageStorage,
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (_req: any, file: Express.Multer.File, cb: any) => {
+      if (!file.mimetype.startsWith("image/")) return cb(new BadRequestException("Only image files are allowed"), false);
+      cb(null, true);
+    },
+  };
+
+  @Get("images/:filename")
+  categoryImage(@Param("filename") filename: string, @Res() response: Response) {
+    const safeFilename = basename(filename);
+    if (safeFilename !== filename) throw new BadRequestException("Invalid image filename");
+    const filePath = join(process.cwd(), "uploads", "services", safeFilename);
+    if (!existsSync(filePath)) throw new NotFoundException("Service image not found");
+    response.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    return response.sendFile(filePath);
+  }
 
   @Get("catalog")
   catalog() { return this.service.getCatalog(); }
@@ -90,6 +126,12 @@ export class ServicesMarketplaceController {
   providerJobs(@Req() req) { return this.service.getProviderJobs(req.user.id); }
 
   @UseGuards(JwtAuthGuard)
+  @Get("provider/jobs/:id")
+  providerJob(@Req() req, @Param("id", ParseIntPipe) id: number) {
+    return this.service.getProviderJobDetails(req.user.id, id);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Patch("provider/jobs/:id/accept")
   acceptJob(@Req() req, @Param("id", ParseIntPipe) id: number) {
     return this.service.acceptJob(req.user.id, id);
@@ -113,12 +155,16 @@ export class ServicesMarketplaceController {
 
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Post("admin/categories")
-  createCategory(@Body() dto: CreateServiceCategoryDto) { return this.service.createCategory(dto); }
+  @UseInterceptors(FileInterceptor("image", ServicesMarketplaceController.categoryImageUpload))
+  createCategory(@Body() dto: CreateServiceCategoryDto, @UploadedFile() image?: Express.Multer.File) {
+    return this.service.createCategory(dto, image?.filename);
+  }
 
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Patch("admin/categories/:id")
-  updateCategory(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateServiceCategoryDto) {
-    return this.service.updateCategory(id, dto);
+  @UseInterceptors(FileInterceptor("image", ServicesMarketplaceController.categoryImageUpload))
+  updateCategory(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateServiceCategoryDto, @UploadedFile() image?: Express.Multer.File) {
+    return this.service.updateCategory(id, dto, image?.filename);
   }
 
   @UseGuards(JwtAuthGuard, AdminGuard)

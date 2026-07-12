@@ -463,6 +463,22 @@ export class ServicesMarketplaceService {
     });
   }
 
+  async getProviderJobDetails(userId: number, id: number) {
+    const booking = await this.prisma.serviceBooking.findFirst({
+      where: { id, providerId: userId },
+      select: {
+        id: true, bookingNumber: true, categoryName: true, serviceName: true,
+        scheduledAt: true, address: true, customerNote: true, providerEarning: true,
+        status: true, acceptedAt: true, startedAt: true, completedAt: true,
+        cancellationReason: true, revisitReason: true, revisitAcceptedAt: true,
+        rating: true, review: true,
+        customer: { select: { id: true, name: true, phone: true, email: true } },
+      },
+    });
+    if (!booking) throw new NotFoundException("Assigned job not found");
+    return booking;
+  }
+
   async acceptJob(userId: number, id: number) {
     const profile = await this.requireApprovedProvider(userId);
     if (!profile.isOnline) throw new BadRequestException("Go online before accepting jobs");
@@ -542,11 +558,11 @@ export class ServicesMarketplaceService {
     });
   }
 
-  createCategory(dto: CreateServiceCategoryDto) {
-    return this.prisma.serviceCategory.create({ data: dto });
+  createCategory(dto: CreateServiceCategoryDto, image?: string) {
+    return this.prisma.serviceCategory.create({ data: { ...dto, image: image ? `/services/images/${image}` : null } });
   }
-  updateCategory(id: number, dto: UpdateServiceCategoryDto) {
-    return this.prisma.serviceCategory.update({ where: { id }, data: dto });
+  updateCategory(id: number, dto: UpdateServiceCategoryDto, image?: string) {
+    return this.prisma.serviceCategory.update({ where: { id }, data: { ...dto, ...(image ? { image: `/services/images/${image}` } : {}) } });
   }
   createPackage(dto: CreateServicePackageDto) {
     return this.prisma.servicePackage.create({ data: dto });

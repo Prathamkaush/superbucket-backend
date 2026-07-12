@@ -67,7 +67,7 @@ export class CouponsPublicController {
 
   @Post("validate")
   @UseGuards(JwtAuthGuard)
-  validate(@Body() dto: ValidateCouponDto) {
-    return this.couponsService.validateCoupon(dto);
+  validate(@Req() req: AuthRequest, @Body() dto: ValidateCouponDto) {
+    return this.couponsService.validateCoupon({ ...dto, userId: req.user.id });
   }
 }

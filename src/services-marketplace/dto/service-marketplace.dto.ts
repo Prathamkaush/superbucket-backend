@@ -20,7 +20,6 @@ export class CreateServiceCategoryDto {
   @IsString() @IsNotEmpty() slug: string;
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsString() icon?: string;
-  @IsOptional() @IsString() image?: string;
   @IsOptional() @IsBoolean() isActive?: boolean;
   @IsOptional() @Type(() => Number) @IsInt() sortOrder?: number;
 }
@@ -30,7 +29,6 @@ export class UpdateServiceCategoryDto {
   @IsOptional() @IsString() @IsNotEmpty() slug?: string;
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsString() icon?: string;
-  @IsOptional() @IsString() image?: string;
   @IsOptional() @IsBoolean() isActive?: boolean;
   @IsOptional() @Type(() => Number) @IsInt() sortOrder?: number;
 }
