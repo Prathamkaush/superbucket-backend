@@ -38,8 +38,8 @@ export class HomeOffersService {
     );
   }
 
-  async create(dto: CreateHomeOfferDto) {
-    const offer = await this.prisma.homeOffer.create({ data: this.toData(dto) });
+  async create(dto: CreateHomeOfferDto, image?: string) {
+    const offer = await this.prisma.homeOffer.create({ data: { ...this.toData(dto), imageUrl: image ? `/home-offers/images/${image}` : null } });
     await this.clearCache();
     return offer;
   }
@@ -70,11 +70,11 @@ export class HomeOffersService {
     return offer;
   }
 
-  async update(id: number, dto: UpdateHomeOfferDto) {
+  async update(id: number, dto: UpdateHomeOfferDto, image?: string) {
     await this.ensureExists(id);
     const offer = await this.prisma.homeOffer.update({
       where: { id },
-      data: this.toData(dto),
+      data: { ...this.toData(dto), ...(image ? { imageUrl: `/home-offers/images/${image}` } : {}) },
     });
     await this.clearCache();
     return offer;
@@ -117,7 +117,6 @@ export class HomeOffersService {
       ...(dto.code !== undefined && { code: dto.code?.trim() || null }),
       ...(dto.icon !== undefined && { icon: dto.icon?.trim() || "tag" }),
       ...(dto.color !== undefined && { color: dto.color?.trim() || "#E30613" }),
-      ...(dto.imageUrl !== undefined && { imageUrl: dto.imageUrl?.trim() || null }),
       ...(dto.sortOrder !== undefined && { sortOrder: Number(dto.sortOrder) || 0 }),
       ...(dto.isActive !== undefined && { isActive: Boolean(dto.isActive) }),
       ...(dto.startsAt !== undefined && {

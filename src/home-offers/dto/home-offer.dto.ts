@@ -4,7 +4,6 @@ import {
   IsInt,
   IsOptional,
   IsString,
-  IsUrl,
   MaxLength,
 } from "class-validator";
 
@@ -36,12 +35,6 @@ export class CreateHomeOfferDto {
   @IsString()
   @MaxLength(20)
   color?: string;
-
-  @IsOptional()
-  @IsString()
-  @IsUrl({ require_protocol: true })
-  @MaxLength(2048)
-  imageUrl?: string;
 
   @IsOptional()
   @IsInt()
