@@ -139,6 +139,13 @@ export class NotificationsService {
     });
   }
 
+  async deleteMine(userId: number, id: number) {
+    if (!Number.isInteger(id) || id <= 0) throw new BadRequestException("Invalid notification id");
+    const result = await this.prisma.notification.deleteMany({ where: { id, userId } });
+    if (!result.count) throw new BadRequestException("Notification not found");
+    return { deleted: true };
+  }
+
   async createAndSend(payload: NotificationPayload) {
     if (!payload.userId && payload.audience) {
       const users = await this.findAudienceUsers(payload.audience);

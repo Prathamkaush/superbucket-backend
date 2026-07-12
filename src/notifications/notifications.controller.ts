@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, NotFoundException, Param, Patch, Post, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, NotFoundException, Param, Patch, Post, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
 import { existsSync, mkdirSync } from "fs";
@@ -61,6 +61,12 @@ export class NotificationsController {
   @Patch("notifications/read-all")
   markAllRead(@Req() req: any) {
     return this.notifications.markAllRead(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete("notifications/:id")
+  deleteMine(@Req() req: any, @Param("id") id: string) {
+    return this.notifications.deleteMine(req.user.id, Number(id));
   }
 
   @UseGuards(JwtAuthGuard, AdminGuard)
