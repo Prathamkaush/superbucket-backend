@@ -46,7 +46,7 @@ async function bootstrap() {
     "https://first-female-admin.vercel.app",
 
     // Swagger UI
-    "https://api.firstfemale.in",
+    "https://apiv1.freeqr.live",
   ];
 
   app.enableCors({
@@ -97,7 +97,7 @@ async function bootstrap() {
     .setTitle("FirstFemale API")
     .setDescription("E-commerce backend API documentation")
     .setVersion("1.0")
-    .addServer("https://api.firstfemale.in")
+    .addServer("https://apiv1.freeqr.live")
     .addBearerAuth(
       {
         type: "http",

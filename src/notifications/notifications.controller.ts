@@ -1,8 +1,9 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, NotFoundException, Param, Patch, Post, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
-import { mkdirSync } from "fs";
-import { extname, join } from "path";
+import { existsSync, mkdirSync } from "fs";
+import { basename, extname, join } from "path";
+import type { Response } from "express";
 import { NotificationAudience } from "@prisma/client";
 import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
@@ -25,6 +26,18 @@ export class NotificationsController {
       cb(null, unique + extname(file.originalname).toLowerCase());
     },
   });
+
+  @Get("notification-images/:filename")
+  getNotificationImage(@Param("filename") filename: string, @Res() response: Response) {
+    const safeFilename = basename(filename);
+    if (safeFilename !== filename) throw new BadRequestException("Invalid image filename");
+
+    const filePath = join(process.cwd(), "uploads", "notifications", safeFilename);
+    if (!existsSync(filePath)) throw new NotFoundException("Notification image not found");
+
+    response.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    return response.sendFile(filePath);
+  }
 
   @UseGuards(JwtAuthGuard)
   @Post("notifications/devices")
@@ -65,7 +78,7 @@ export class NotificationsController {
   broadcast(@Req() req: any, @Body() dto: AdminBroadcastNotificationDto, @UploadedFile() image?: Express.Multer.File) {
     return this.notifications.adminBroadcast(req.user.id, {
       ...dto,
-      imageUrl: image ? `/uploads/notifications/${image.filename}` : undefined,
+      imageUrl: image ? `/notification-images/${image.filename}` : undefined,
       audience: (dto.audience || "ALL") as NotificationAudience,
     });
   }

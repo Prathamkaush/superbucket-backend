@@ -49,7 +49,7 @@ export class CategoryStripController {
       return {
         id: subtype?.id,
         name: subtype?.name,
-        image: m ? `https://api.firstfemale.in${m.url}` : null,
+        image: m ? `${(process.env.PUBLIC_API_URL || "https://apiv1.freeqr.live").replace(/\/$/, "")}${m.url}` : null,
       };
     });
   }

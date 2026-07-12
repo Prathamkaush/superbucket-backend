@@ -596,9 +596,10 @@ function normalizeImageUrl(value?: string | null) {
 }
 
 function publicImageUrl(value?: string | null) {
-  const imageUrl = normalizeImageUrl(value);
+  const normalized = normalizeImageUrl(value);
+  const imageUrl = normalized?.replace(/^\/uploads\/notifications\//, "/notification-images/");
   if (!imageUrl || /^https?:\/\//i.test(imageUrl)) return imageUrl;
-  const baseUrl = (process.env.PUBLIC_API_URL || process.env.API_URL || "https://api.firstfemale.in").replace(/\/$/, "");
+  const baseUrl = (process.env.PUBLIC_API_URL || process.env.API_URL || "https://apiv1.freeqr.live").replace(/\/$/, "");
   return `${baseUrl}${imageUrl.startsWith("/") ? "" : "/"}${imageUrl}`;
 }
 
