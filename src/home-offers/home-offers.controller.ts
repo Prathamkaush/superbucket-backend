@@ -1,5 +1,6 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   Delete,
   Get,
@@ -8,8 +9,14 @@ import {
   Patch,
   Post,
   Put,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { diskStorage } from "multer";
+import { mkdirSync } from "fs";
+import { extname, join } from "path";
 import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
 import { AdminGuard } from "../auth/admin.guard";
 import { CreateHomeOfferDto, UpdateHomeOfferDto } from "./dto/home-offer.dto";
@@ -20,6 +27,18 @@ import { HomeOffersService } from "./home-offers.service";
 export class PublicHomeOffersController {
   constructor(private readonly homeOffersService: HomeOffersService) {}
 
+  private static posterStorage = diskStorage({
+    destination: (_req, _file, cb) => {
+      const uploadPath = join(process.cwd(), "uploads", "business-ads");
+      mkdirSync(uploadPath, { recursive: true });
+      cb(null, uploadPath);
+    },
+    filename: (_req, file, cb) => {
+      const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+      cb(null, unique + extname(file.originalname).toLowerCase());
+    },
+  });
+
   @Get()
   getActive() {
     return this.homeOffersService.getActiveOffers();
@@ -27,8 +46,21 @@ export class PublicHomeOffersController {
 
   @Post("advertise-business")
   @UseGuards(JwtAuthGuard)
-  createBusinessAd(@Body() dto: CreateBusinessAdDto) {
-    return this.homeOffersService.createBusinessAd(dto);
+  @UseInterceptors(FileInterceptor("image", {
+    storage: PublicHomeOffersController.posterStorage,
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      if (!file.mimetype.startsWith("image/")) {
+        return cb(new BadRequestException("Only image files are allowed"), false);
+      }
+      cb(null, true);
+    },
+  }))
+  createBusinessAd(
+    @Body() dto: CreateBusinessAdDto,
+    @UploadedFile() image?: Express.Multer.File,
+  ) {
+    return this.homeOffersService.createBusinessAd(dto, image?.filename);
   }
 }
 

@@ -44,7 +44,7 @@ export class HomeOffersService {
     return offer;
   }
 
-  async createBusinessAd(dto: CreateBusinessAdDto) {
+  async createBusinessAd(dto: CreateBusinessAdDto, image?: string) {
     const businessName = dto.businessName.trim();
     const offerText = dto.offer?.trim();
     const description = dto.description.trim();
@@ -59,7 +59,7 @@ export class HomeOffersService {
         code: category || null,
         icon: "business",
         color: "#0B63CE",
-        imageUrl: dto.posterUrl?.trim() || null,
+        imageUrl: image ? `/uploads/business-ads/${image}` : null,
         sortOrder: -10,
         isActive: true,
         startsAt: new Date(),

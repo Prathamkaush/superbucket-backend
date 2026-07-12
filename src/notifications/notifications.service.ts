@@ -460,11 +460,12 @@ export class NotificationsService {
 
     if (!tokens.length) return;
 
+    const pushImageUrl = publicImageUrl(payload.imageUrl);
     const message = {
       notification: {
         title: payload.title,
         body: payload.body,
-        ...(payload.imageUrl ? { imageUrl: payload.imageUrl } : {}),
+        ...(pushImageUrl ? { imageUrl: pushImageUrl } : {}),
       },
       data: Object.fromEntries(
         Object.entries({
@@ -476,7 +477,7 @@ export class NotificationsService {
         priority: "high" as const,
         notification: {
           channelId: "default",
-          ...(payload.imageUrl ? { imageUrl: payload.imageUrl } : {}),
+          ...(pushImageUrl ? { imageUrl: pushImageUrl } : {}),
         },
       },
       tokens: tokens.map((item) => item.token),
@@ -514,11 +515,12 @@ export class NotificationsService {
 
     if (!tokens.length) return;
 
+    const pushImageUrl = publicImageUrl(payload.imageUrl);
     const message = {
       notification: {
         title: payload.title,
         body: payload.body,
-        ...(payload.imageUrl ? { imageUrl: payload.imageUrl } : {}),
+        ...(pushImageUrl ? { imageUrl: pushImageUrl } : {}),
       },
       data: Object.fromEntries(
         Object.entries({
@@ -530,7 +532,7 @@ export class NotificationsService {
         priority: "high" as const,
         notification: {
           channelId: "default",
-          ...(payload.imageUrl ? { imageUrl: payload.imageUrl } : {}),
+          ...(pushImageUrl ? { imageUrl: pushImageUrl } : {}),
         },
       },
       tokens: tokens.map((item) => item.token),
@@ -591,6 +593,13 @@ function normalizeImageUrl(value?: string | null) {
   const imageUrl = typeof value === "string" ? value.trim() : "";
   if (!imageUrl) return null;
   return imageUrl.slice(0, MAX_NOTIFICATION_IMAGE_URL_LENGTH);
+}
+
+function publicImageUrl(value?: string | null) {
+  const imageUrl = normalizeImageUrl(value);
+  if (!imageUrl || /^https?:\/\//i.test(imageUrl)) return imageUrl;
+  const baseUrl = (process.env.PUBLIC_API_URL || process.env.API_URL || "https://api.firstfemale.in").replace(/\/$/, "");
+  return `${baseUrl}${imageUrl.startsWith("/") ? "" : "/"}${imageUrl}`;
 }
 
 function parseFirebaseServiceAccount(value: string, preferBase64 = false) {

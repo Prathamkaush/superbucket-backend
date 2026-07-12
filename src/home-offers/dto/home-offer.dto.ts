@@ -89,9 +89,4 @@ export class CreateBusinessAdDto {
   @MaxLength(80)
   offer?: string;
 
-  @IsOptional()
-  @IsString()
-  @IsUrl({ require_protocol: true })
-  @MaxLength(2048)
-  posterUrl?: string;
 }

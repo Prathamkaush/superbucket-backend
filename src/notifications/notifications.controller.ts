@@ -1,4 +1,8 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { diskStorage } from "multer";
+import { mkdirSync } from "fs";
+import { extname, join } from "path";
 import { NotificationAudience } from "@prisma/client";
 import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
@@ -9,6 +13,18 @@ import { NotificationsService } from "./notifications.service";
 @Controller()
 export class NotificationsController {
   constructor(private readonly notifications: NotificationsService) {}
+
+  private static imageStorage = diskStorage({
+    destination: (_req, _file, cb) => {
+      const uploadPath = join(process.cwd(), "uploads", "notifications");
+      mkdirSync(uploadPath, { recursive: true });
+      cb(null, uploadPath);
+    },
+    filename: (_req, file, cb) => {
+      const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+      cb(null, unique + extname(file.originalname).toLowerCase());
+    },
+  });
 
   @UseGuards(JwtAuthGuard)
   @Post("notifications/devices")
@@ -36,9 +52,20 @@ export class NotificationsController {
 
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Post("admin/notifications/broadcast")
-  broadcast(@Req() req: any, @Body() dto: AdminBroadcastNotificationDto) {
+  @UseInterceptors(FileInterceptor("image", {
+    storage: NotificationsController.imageStorage,
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      if (!file.mimetype.startsWith("image/")) {
+        return cb(new BadRequestException("Only image files are allowed"), false);
+      }
+      cb(null, true);
+    },
+  }))
+  broadcast(@Req() req: any, @Body() dto: AdminBroadcastNotificationDto, @UploadedFile() image?: Express.Multer.File) {
     return this.notifications.adminBroadcast(req.user.id, {
       ...dto,
+      imageUrl: image ? `/uploads/notifications/${image.filename}` : undefined,
       audience: (dto.audience || "ALL") as NotificationAudience,
     });
   }
