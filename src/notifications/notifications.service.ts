@@ -420,11 +420,24 @@ export class NotificationsService {
     });
   }
 
-  async notifyNewOrderForStaff(order: { id: number; finalAmount?: unknown; shopId?: number | null }) {
+  async notifyNewOrderForStaff(order: {
+    id: number;
+    finalAmount?: unknown;
+    shopId?: number | null;
+    deliveryMode?: string | null;
+    scheduledDeliveryAt?: Date | string | null;
+    deliverySlotLabel?: string | null;
+  }) {
+    const deliveryLabel = order.deliveryMode === "SCHEDULED"
+      ? order.deliverySlotLabel || (order.scheduledDeliveryAt
+          ? new Date(order.scheduledDeliveryAt).toLocaleString("en-IN")
+          : "the selected delivery slot")
+      : "instant delivery";
+
     await this.notifyAdmins(
       "ADMIN_NEW_ORDER",
       "New order received",
-      `Order #${order.id} has been placed.`,
+      `Order #${order.id} has been placed for ${deliveryLabel}.`,
       { orderId: order.id, screen: "Orders" },
     );
 
@@ -449,8 +462,8 @@ export class NotificationsService {
       recipients,
       {
         type: "PICKER_NEW_ORDER",
-        title: "New order ready",
-        body: `Order #${order.id} is waiting for picker action.`,
+        title: order.deliveryMode === "SCHEDULED" ? "New scheduled order" : "New order ready",
+        body: `Order #${order.id} is for ${deliveryLabel}.`,
         data: { orderId: order.id, screen: "Orders" },
       },
     );

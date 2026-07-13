@@ -2,10 +2,14 @@ import {
   IsBoolean,
   IsDateString,
   IsInt,
+  IsIn,
+  IsNumber,
   IsOptional,
   IsString,
   MaxLength,
 } from "class-validator";
+import { Type } from "class-transformer";
+import { PartialType } from "@nestjs/mapped-types";
 
 export class CreateHomeOfferDto {
   @IsString()
@@ -56,6 +60,10 @@ export class CreateHomeOfferDto {
 export class UpdateHomeOfferDto extends CreateHomeOfferDto {}
 
 export class CreateBusinessAdDto {
+  @Type(() => Number)
+  @IsInt()
+  planId: number;
+
   @IsString()
   @MaxLength(80)
   businessName: string;
@@ -82,4 +90,52 @@ export class CreateBusinessAdDto {
   @MaxLength(80)
   offer?: string;
 
+}
+
+export class UpdateBusinessAdDto extends PartialType(CreateBusinessAdDto) {}
+
+export class CreateBusinessAdPlanDto {
+  @IsString()
+  @MaxLength(60)
+  name: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  price: number;
+
+  @Type(() => Number)
+  @IsInt()
+  durationDays: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  description?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  sortOrder?: number;
+}
+
+export class UpdateBusinessAdPlanDto extends PartialType(CreateBusinessAdPlanDto) {}
+
+export class ReviewBusinessAdDto {
+  @IsIn(["APPROVED", "REJECTED"])
+  decision: "APPROVED" | "REJECTED";
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
+export class VerifyBusinessAdPaymentDto {
+  @IsString() razorpay_order_id: string;
+  @IsString() razorpay_payment_id: string;
+  @IsString() razorpay_signature: string;
 }

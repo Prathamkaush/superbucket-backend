@@ -105,6 +105,7 @@ model User {
   sentNotifications Notification[] @relation("NotificationCreatedBy")
   wallet WalletAccount?
   walletTransactions WalletTransaction[]
+  businessAds BusinessAd[]
 
   properties    Property[]
   propertyLeads PropertyLead[]
@@ -1069,6 +1070,68 @@ model HomeOffer {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+enum BusinessAdStatus {
+  PENDING_REVIEW
+  APPROVED_AWAITING_PAYMENT
+  ACTIVE
+  REJECTED
+  PAUSED
+  EXPIRED
+  ARCHIVED
+}
+
+model BusinessAdPlan {
+  id           Int      @id @default(autoincrement())
+  name         String
+  price        Decimal  @db.Decimal(10, 2)
+  durationDays Int
+  description  String?
+  isActive     Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ads BusinessAd[]
+
+  @@index([isActive, sortOrder])
+}
+
+model BusinessAd {
+  id          Int              @id @default(autoincrement())
+  userId      Int
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId      Int
+  plan        BusinessAdPlan   @relation(fields: [planId], references: [id], onDelete: Restrict)
+  status      BusinessAdStatus @default(PENDING_REVIEW)
+
+  businessName String
+  category     String?
+  description  String          @db.Text
+  address      String
+  phone        String
+  offerText    String?
+  imageUrl     String?         @db.Text
+
+  priceSnapshot        Decimal @db.Decimal(10, 2)
+  durationDaysSnapshot Int
+  rejectionReason      String? @db.Text
+  approvedAt           DateTime?
+  paidAt               DateTime?
+  startsAt             DateTime?
+  expiresAt            DateTime?
+  paymentMethod        String?
+  paymentId            String? @unique
+  razorpayOrderId      String? @unique
+  views                 Int     @default(0)
+  clicks                Int     @default(0)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status, startsAt, expiresAt])
+  @@index([planId])
 }
 
 // -----------------------------------------

@@ -10,6 +10,7 @@ import {
   Patch,
   Post,
   Put,
+  Req,
   UploadedFile,
   Res,
   UseGuards,
@@ -22,8 +23,16 @@ import { basename, extname, join } from "path";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
 import { AdminGuard } from "../auth/admin.guard";
-import { CreateHomeOfferDto, UpdateHomeOfferDto } from "./dto/home-offer.dto";
-import { CreateBusinessAdDto } from "./dto/home-offer.dto";
+import {
+  CreateBusinessAdDto,
+  CreateBusinessAdPlanDto,
+  CreateHomeOfferDto,
+  ReviewBusinessAdDto,
+  UpdateBusinessAdDto,
+  UpdateBusinessAdPlanDto,
+  UpdateHomeOfferDto,
+  VerifyBusinessAdPaymentDto,
+} from "./dto/home-offer.dto";
 import { HomeOffersService } from "./home-offers.service";
 
 @Controller("home-offers")
@@ -45,6 +54,17 @@ export class PublicHomeOffersController {
   @Get()
   getActive() {
     return this.homeOffersService.getActiveOffers();
+  }
+
+  @Get("business-ad-plans")
+  getBusinessAdPlans() {
+    return this.homeOffersService.getActiveAdPlans();
+  }
+
+  @Get("business-ads/my")
+  @UseGuards(JwtAuthGuard)
+  getMyBusinessAds(@Req() req: any) {
+    return this.homeOffersService.getMyBusinessAds(req.user.id);
   }
 
   @Get("images/:filename")
@@ -70,10 +90,53 @@ export class PublicHomeOffersController {
     },
   }))
   createBusinessAd(
+    @Req() req: any,
     @Body() dto: CreateBusinessAdDto,
     @UploadedFile() image?: Express.Multer.File,
   ) {
-    return this.homeOffersService.createBusinessAd(dto, image?.filename);
+    return this.homeOffersService.createBusinessAd(req.user.id, dto, image?.filename);
+  }
+
+  @Patch("business-ads/:id")
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FileInterceptor("image", {
+    storage: PublicHomeOffersController.posterStorage,
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => file.mimetype.startsWith("image/")
+      ? cb(null, true)
+      : cb(new BadRequestException("Only image files are allowed"), false),
+  }))
+  updateMyBusinessAd(@Req() req: any, @Param("id", ParseIntPipe) id: number, @Body() dto: UpdateBusinessAdDto, @UploadedFile() image?: Express.Multer.File) {
+    return this.homeOffersService.updateMyBusinessAd(req.user.id, id, dto, image?.filename);
+  }
+
+  @Delete("business-ads/:id")
+  @UseGuards(JwtAuthGuard)
+  archiveMyBusinessAd(@Req() req: any, @Param("id", ParseIntPipe) id: number) {
+    return this.homeOffersService.archiveMyBusinessAd(req.user.id, id);
+  }
+
+  @Post("business-ads/:id/pay/wallet")
+  @UseGuards(JwtAuthGuard)
+  payBusinessAdWithWallet(@Req() req: any, @Param("id", ParseIntPipe) id: number) {
+    return this.homeOffersService.payBusinessAdWithWallet(req.user.id, id);
+  }
+
+  @Post("business-ads/:id/pay/razorpay/create")
+  @UseGuards(JwtAuthGuard)
+  createBusinessAdPayment(@Req() req: any, @Param("id", ParseIntPipe) id: number) {
+    return this.homeOffersService.createBusinessAdRazorpayOrder(req.user.id, id);
+  }
+
+  @Post("business-ads/:id/pay/razorpay/verify")
+  @UseGuards(JwtAuthGuard)
+  verifyBusinessAdPayment(@Req() req: any, @Param("id", ParseIntPipe) id: number, @Body() dto: VerifyBusinessAdPaymentDto) {
+    return this.homeOffersService.verifyBusinessAdRazorpayPayment(req.user.id, id, dto);
+  }
+
+  @Post("business-ads/:id/click")
+  registerBusinessAdClick(@Param("id", ParseIntPipe) id: number) {
+    return this.homeOffersService.registerBusinessAdClick(id);
   }
 }
 
@@ -106,6 +169,41 @@ export class AdminHomeOffersController {
   @Get()
   getAll() {
     return this.homeOffersService.getAdminOffers();
+  }
+
+  @Get("business-ads/campaigns")
+  getBusinessAds() {
+    return this.homeOffersService.getAdminBusinessAds();
+  }
+
+  @Patch("business-ads/campaigns/:id/review")
+  reviewBusinessAd(@Param("id", ParseIntPipe) id: number, @Body() dto: ReviewBusinessAdDto) {
+    return this.homeOffersService.reviewBusinessAd(id, dto);
+  }
+
+  @Put("business-ads/campaigns/:id/pause")
+  toggleBusinessAdPause(@Param("id", ParseIntPipe) id: number) {
+    return this.homeOffersService.toggleBusinessAdPause(id);
+  }
+
+  @Delete("business-ads/campaigns/:id")
+  archiveBusinessAd(@Param("id", ParseIntPipe) id: number) {
+    return this.homeOffersService.archiveAdminBusinessAd(id);
+  }
+
+  @Get("business-ad-plans")
+  getBusinessAdPlans() {
+    return this.homeOffersService.getAdminAdPlans();
+  }
+
+  @Post("business-ad-plans")
+  createBusinessAdPlan(@Body() dto: CreateBusinessAdPlanDto) {
+    return this.homeOffersService.createAdPlan(dto);
+  }
+
+  @Patch("business-ad-plans/:id")
+  updateBusinessAdPlan(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateBusinessAdPlanDto) {
+    return this.homeOffersService.updateAdPlan(id, dto);
   }
 
   @Post()

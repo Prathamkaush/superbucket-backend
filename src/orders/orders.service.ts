@@ -123,7 +123,7 @@ export class OrdersService {
   }
 
   async getAll(query: any, actor?: { id: number; role: UserRole }) {
-    const { page = 1, limit = 10, status, minAmount, maxAmount, fromDate, toDate } = query;
+    const { page = 1, limit = 10, status, deliveryMode, minAmount, maxAmount, fromDate, toDate } = query;
     const skip = (page - 1) * limit;
 
     const where: any = {};
@@ -134,6 +134,9 @@ export class OrdersService {
       where.shopId = shopId;
     }
     if (status) where.status = status;
+    if (deliveryMode === "INSTANT" || deliveryMode === "SCHEDULED") {
+      where.deliveryMode = deliveryMode;
+    }
     if (fromDate || toDate) {
       where.createdAt = {};
       if (fromDate) where.createdAt.gte = new Date(fromDate);

@@ -5,9 +5,11 @@ import {
   PublicHomeOffersController,
 } from "./home-offers.controller";
 import { HomeOffersService } from "./home-offers.service";
+import { PaymentsModule } from "../payment/payments.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, PaymentsModule, NotificationsModule],
   controllers: [PublicHomeOffersController, AdminHomeOffersController],
   providers: [HomeOffersService],
 })
