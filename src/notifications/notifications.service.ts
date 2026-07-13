@@ -1,5 +1,13 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
-import { NotificationAudience, OrderStatus, Prisma, PushDevicePlatform, UserRole } from "@prisma/client";
+import {
+  NotificationAudience,
+  OrderStatus,
+  Prisma,
+  PushDevicePlatform,
+  ServiceBookingStatus,
+  ServiceProviderStatus,
+  UserRole,
+} from "@prisma/client";
 import * as firebaseAdmin from "firebase-admin";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -228,6 +236,100 @@ export class NotificationsService {
       title: "Order placed successfully",
       body: `Your order #${order.id} has been placed successfully.`,
       data: { orderId: order.id, screen: "OrderTracking" },
+    });
+  }
+
+  async notifyServiceBookingCreated(booking: {
+    id: number;
+    bookingNumber: string;
+    customerId: number;
+    providerId?: number | null;
+    categoryId: number;
+    serviceName: string;
+  }) {
+    await this.createAndSend({
+      userId: booking.customerId,
+      type: "SERVICE_BOOKING_CREATED",
+      title: "Service booked successfully",
+      body: `${booking.serviceName} (${booking.bookingNumber}) has been booked successfully.`,
+      data: { bookingId: booking.id, screen: "ServiceBookingDetail" },
+    });
+
+    if (booking.providerId) {
+      return this.notifyUsers([booking.providerId], {
+        type: "SERVICE_JOB_ASSIGNED",
+        title: "New service job assigned",
+        body: `${booking.serviceName} (${booking.bookingNumber}) has been assigned to you.`,
+        data: { bookingId: booking.id, screen: "Jobs" },
+      });
+    }
+
+    const providers = await this.prisma.serviceProviderProfile.findMany({
+      where: {
+        status: ServiceProviderStatus.APPROVED,
+        isOnline: true,
+        services: { some: { categoryId: booking.categoryId } },
+      },
+      select: { userId: true },
+    });
+
+    return this.notifyUsers(
+      providers.map((provider) => provider.userId),
+      {
+        type: "SERVICE_JOB_AVAILABLE",
+        title: "New service job available",
+        body: `${booking.serviceName} (${booking.bookingNumber}) is available to accept.`,
+        data: { bookingId: booking.id, screen: "AvailableJobs" },
+      },
+    );
+  }
+
+  async notifyServiceBookingStatus(booking: {
+    id: number;
+    bookingNumber: string;
+    customerId: number;
+    serviceName: string;
+    status: ServiceBookingStatus;
+  }) {
+    const copy: Partial<Record<ServiceBookingStatus, { title: string; body: string }>> = {
+      ACCEPTED: {
+        title: "Service provider assigned",
+        body: `A provider accepted ${booking.serviceName} (${booking.bookingNumber}).`,
+      },
+      EN_ROUTE: {
+        title: "Provider is on the way",
+        body: `Your provider is travelling to you for ${booking.serviceName}.`,
+      },
+      IN_PROGRESS: {
+        title: "Service started",
+        body: `${booking.serviceName} is now in progress.`,
+      },
+      REVISIT_REQUESTED: {
+        title: "Revisit requested",
+        body: `Your provider requested a revisit for ${booking.serviceName}.`,
+      },
+      COMPLETED: {
+        title: "Service completed",
+        body: `${booking.serviceName} (${booking.bookingNumber}) has been completed.`,
+      },
+      CANCELLED: {
+        title: "Service booking cancelled",
+        body: `${booking.serviceName} (${booking.bookingNumber}) was cancelled.`,
+      },
+    };
+    const message = copy[booking.status];
+    if (!message) return { recipients: 0 };
+
+    return this.createAndSend({
+      userId: booking.customerId,
+      type: `SERVICE_BOOKING_${booking.status}`,
+      title: message.title,
+      body: message.body,
+      data: {
+        bookingId: booking.id,
+        screen: "ServiceBookingDetail",
+        status: booking.status,
+      },
     });
   }
 

@@ -226,12 +226,22 @@ export class ServicesMarketplaceService {
       },
       include: { package: true },
     });
-    this.notifications.notifyAdmins(
-      "ADMIN_SERVICE_ORDER_CREATED",
-      "New service order",
-      `${booking.serviceName} was booked as ${booking.bookingNumber}.`,
-      { bookingId: booking.id, screen: "Services" },
-    ).catch(() => undefined);
+    await Promise.allSettled([
+      this.notifications.notifyServiceBookingCreated({
+        id: booking.id,
+        bookingNumber: booking.bookingNumber,
+        customerId,
+        providerId: booking.providerId,
+        categoryId: booking.package.categoryId,
+        serviceName: booking.serviceName,
+      }),
+      this.notifications.notifyAdmins(
+        "ADMIN_SERVICE_ORDER_CREATED",
+        "New service order",
+        `${booking.serviceName} was booked as ${booking.bookingNumber}.`,
+        { bookingId: booking.id, screen: "Services" },
+      ),
+    ]);
     return booking;
   }
 
@@ -494,7 +504,9 @@ export class ServicesMarketplaceService {
       data: { providerId: userId, status: ServiceBookingStatus.ACCEPTED, acceptedAt: new Date() },
     });
     if (!result.count) throw new ConflictException("This job is no longer available");
-    return this.getProviderJob(userId, id);
+    const accepted = await this.getProviderJob(userId, id);
+    await this.notifications.notifyServiceBookingStatus(accepted).catch(() => undefined);
+    return accepted;
   }
 
   private async getProviderJob(userId: number, id: number) {
@@ -524,7 +536,9 @@ export class ServicesMarketplaceService {
       data.status = ServiceBookingStatus.PENDING;
       data.acceptedAt = null;
     }
-    return this.prisma.serviceBooking.update({ where: { id }, data });
+    const updated = await this.prisma.serviceBooking.update({ where: { id }, data });
+    await this.notifications.notifyServiceBookingStatus(updated).catch(() => undefined);
+    return updated;
   }
 
   async requestRevisit(userId: number, id: number, dto: RequestServiceRevisitDto) {
@@ -536,7 +550,7 @@ export class ServicesMarketplaceService {
       throw new BadRequestException("Revisit can be requested only after travel has started");
     }
 
-    return this.prisma.serviceBooking.update({
+    const updated = await this.prisma.serviceBooking.update({
       where: { id },
       data: {
         status: ServiceBookingStatus.REVISIT_REQUESTED,
@@ -544,6 +558,8 @@ export class ServicesMarketplaceService {
         revisitRequestedAt: new Date(),
       },
     });
+    await this.notifications.notifyServiceBookingStatus(updated).catch(() => undefined);
+    return updated;
   }
 
   listBookingsForAdmin() {
