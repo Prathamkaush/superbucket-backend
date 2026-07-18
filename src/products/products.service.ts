@@ -611,6 +611,7 @@ export class ProductsService {
       page,
       limit,
       categoryId,
+      categoryIds,
       typeId,
       subtypeId,
       minPrice,
@@ -642,7 +643,15 @@ export class ProductsService {
     };
 
     /* ---------------- CATEGORY / TYPE ---------------- */
-    if (categoryId) where.AND.push({ categoryId: Number(categoryId) });
+    if (categoryIds) {
+      const ids = String(categoryIds)
+        .split(',')
+        .map((value) => Number(value.trim()))
+        .filter((value) => Number.isInteger(value) && value > 0);
+      if (ids.length) where.AND.push({ categoryId: { in: ids } });
+    } else if (categoryId) {
+      where.AND.push({ categoryId: Number(categoryId) });
+    }
 
     if (subtypeId) {
       where.AND.push({ subtypeId: Number(subtypeId) });

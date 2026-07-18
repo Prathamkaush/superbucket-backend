@@ -27,6 +27,11 @@ export class CreateHomeOfferDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(20)
+  phoneNumber?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(40)
   code?: string;
 
@@ -60,6 +65,10 @@ export class CreateHomeOfferDto {
 export class UpdateHomeOfferDto extends CreateHomeOfferDto {}
 
 export class CreateBusinessAdDto {
+  @IsOptional()
+  @IsIn(["BUSINESS", "LOCAL_SHOP"])
+  adType?: "BUSINESS" | "LOCAL_SHOP";
+
   @Type(() => Number)
   @IsInt()
   planId: number;

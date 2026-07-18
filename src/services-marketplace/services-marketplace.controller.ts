@@ -1,5 +1,5 @@
-import { BadRequestException, Body, Controller, Get, NotFoundException, Param, ParseIntPipe, Patch, Post, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
-import { FileInterceptor } from "@nestjs/platform-express";
+import { BadRequestException, Body, Controller, Get, NotFoundException, Param, ParseIntPipe, Patch, Post, Query, Req, Res, UploadedFile, UploadedFiles, UseGuards, UseInterceptors } from "@nestjs/common";
+import { FileFieldsInterceptor, FileInterceptor } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
 import { existsSync, mkdirSync } from "fs";
 import { basename, extname, join } from "path";
@@ -9,7 +9,7 @@ import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
 import {
   AcceptServiceRevisitDto, CancelServiceBookingDto, CreateServiceBookingDto,
-  CreateServiceCategoryDto, CreateServicePackageDto, RequestServiceRevisitDto,
+  CreateServiceCategoryDto, CreateServiceExtensionDto, CreateServicePackageDto, RequestServiceRevisitDto,
   ReviewServiceBookingDto, SetProviderAvailabilityDto,
   UpdateProviderApprovalDto, UpdateProviderJobStatusDto, UpdateServiceCategoryDto,
   UpdateServicePackageDto, UpsertProviderProfileDto,
@@ -41,12 +41,42 @@ export class ServicesMarketplaceController {
     },
   };
 
+  private static extensionImageStorage = diskStorage({
+    destination: (_req, _file, cb) => {
+      const uploadPath = join(process.cwd(), "uploads", "service-extensions");
+      mkdirSync(uploadPath, { recursive: true });
+      cb(null, uploadPath);
+    },
+    filename: (_req, file, cb) => {
+      const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+      cb(null, unique + extname(file.originalname).toLowerCase());
+    },
+  });
+
+  private static extensionImageUpload = {
+    storage: ServicesMarketplaceController.extensionImageStorage,
+    limits: { fileSize: 10 * 1024 * 1024, files: 4 },
+    fileFilter: (_req: any, file: Express.Multer.File, cb: any) => file.mimetype.startsWith("image/")
+      ? cb(null, true)
+      : cb(new BadRequestException("Only image files are allowed"), false),
+  };
+
   @Get("images/:filename")
   categoryImage(@Param("filename") filename: string, @Res() response: Response) {
     const safeFilename = basename(filename);
     if (safeFilename !== filename) throw new BadRequestException("Invalid image filename");
     const filePath = join(process.cwd(), "uploads", "services", safeFilename);
     if (!existsSync(filePath)) throw new NotFoundException("Service image not found");
+    response.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    return response.sendFile(filePath);
+  }
+
+  @Get("extension-images/:filename")
+  extensionImage(@Param("filename") filename: string, @Res() response: Response) {
+    const safeFilename = basename(filename);
+    if (safeFilename !== filename) throw new BadRequestException("Invalid image filename");
+    const filePath = join(process.cwd(), "uploads", "service-extensions", safeFilename);
+    if (!existsSync(filePath)) throw new NotFoundException("Extension image not found");
     response.setHeader("Cache-Control", "public, max-age=31536000, immutable");
     return response.sendFile(filePath);
   }
@@ -81,6 +111,12 @@ export class ServicesMarketplaceController {
   @Get("bookings/:id")
   booking(@Req() req, @Param("id", ParseIntPipe) id: number) {
     return this.service.getCustomerBooking(req.user.id, id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("bookings/:id/invoice")
+  invoice(@Req() req, @Param("id", ParseIntPipe) id: number) {
+    return this.service.getCustomerInvoice(req.user.id, id);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -129,6 +165,23 @@ export class ServicesMarketplaceController {
   @Get("provider/jobs/:id")
   providerJob(@Req() req, @Param("id", ParseIntPipe) id: number) {
     return this.service.getProviderJobDetails(req.user.id, id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("provider/jobs/:id/extension")
+  @UseInterceptors(FileFieldsInterceptor([
+    { name: "problemImage1", maxCount: 1 },
+    { name: "problemImage2", maxCount: 1 },
+    { name: "solvedImage1", maxCount: 1 },
+    { name: "solvedImage2", maxCount: 1 },
+  ], ServicesMarketplaceController.extensionImageUpload))
+  createExtension(
+    @Req() req,
+    @Param("id", ParseIntPipe) id: number,
+    @Body() dto: CreateServiceExtensionDto,
+    @UploadedFiles() files?: Record<string, Express.Multer.File[]>,
+  ) {
+    return this.service.createServiceExtension(req.user.id, id, dto, files || {});
   }
 
   @UseGuards(JwtAuthGuard)
@@ -184,6 +237,10 @@ export class ServicesMarketplaceController {
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Get("admin/bookings")
   adminBookings() { return this.service.listBookingsForAdmin(); }
+
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @Get("admin/extensions")
+  adminExtensions() { return this.service.listExtensionsForAdmin(); }
 
   @UseGuards(JwtAuthGuard, AdminGuard)
   @Patch("admin/providers/:id/status")

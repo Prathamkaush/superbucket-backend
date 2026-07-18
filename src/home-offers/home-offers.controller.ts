@@ -61,6 +61,11 @@ export class PublicHomeOffersController {
     return this.homeOffersService.getActiveAdPlans();
   }
 
+  @Get("local-shops")
+  getActiveLocalShops() {
+    return this.homeOffersService.getActiveLocalShops();
+  }
+
   @Get("business-ads/my")
   @UseGuards(JwtAuthGuard)
   getMyBusinessAds(@Req() req: any) {

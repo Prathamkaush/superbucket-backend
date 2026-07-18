@@ -17,6 +17,7 @@ import {
   CancelServiceBookingDto,
   CreateServiceBookingDto,
   CreateServiceCategoryDto,
+  CreateServiceExtensionDto,
   CreateServicePackageDto,
   AcceptServiceRevisitDto,
   RequestServiceRevisitDto,
@@ -280,7 +281,7 @@ export class ServicesMarketplaceService {
   async getCustomerBookings(customerId: number) {
     const bookings = await this.prisma.serviceBooking.findMany({
       where: { customerId },
-      include: { provider: { select: customerProviderSelect }, package: true },
+      include: { customer: { select: { name: true } }, provider: { select: customerProviderSelect }, package: true, extension: true },
       orderBy: { createdAt: "desc" },
     });
     return this.attachProviderRatings(bookings);
@@ -289,10 +290,35 @@ export class ServicesMarketplaceService {
   async getCustomerBooking(customerId: number, id: number) {
     const booking = await this.prisma.serviceBooking.findFirst({
       where: { id, customerId },
-      include: { provider: { select: customerProviderSelect }, package: true },
+      include: { customer: { select: { name: true } }, provider: { select: customerProviderSelect }, package: true, extension: true },
     });
     if (!booking) throw new NotFoundException("Booking not found");
     return (await this.attachProviderRatings([booking]))[0];
+  }
+
+  async getCustomerInvoice(customerId: number, id: number) {
+    const booking = await this.getCustomerBooking(customerId, id);
+    if (booking.status !== ServiceBookingStatus.COMPLETED) {
+      throw new BadRequestException("Invoice is available after service completion");
+    }
+    const baseCharge = Number(booking.price);
+    const extensionCharge = Number(booking.extension?.charge || 0);
+    return {
+      invoiceNumber: `SVC-${booking.bookingNumber}`,
+      issuedAt: booking.completedAt || booking.updatedAt,
+      bookingNumber: booking.bookingNumber,
+      customerName: booking.customer?.name || (booking.address as any)?.name || "Customer",
+      providerName: booking.provider?.name || "Service Partner",
+      serviceName: booking.serviceName,
+      scheduledAt: booking.scheduledAt,
+      baseCharge,
+      extension: booking.extension ? {
+        serviceName: booking.extension.serviceName,
+        durationMinutes: booking.extension.durationMinutes,
+        charge: extensionCharge,
+      } : null,
+      total: baseCharge + extensionCharge,
+    };
   }
 
   async cancelBooking(customerId: number, id: number, dto: CancelServiceBookingDto) {
@@ -467,6 +493,7 @@ export class ServicesMarketplaceService {
         cancellationReason: true, cancelledAt: true,
         revisitReason: true, revisitRequestedAt: true, revisitAcceptedAt: true,
         rating: true, review: true,
+        extension: true,
         customer: { select: { id: true, name: true, phone: true } },
       },
       orderBy: { scheduledAt: "desc" },
@@ -482,11 +509,54 @@ export class ServicesMarketplaceService {
         status: true, acceptedAt: true, startedAt: true, completedAt: true,
         cancellationReason: true, revisitReason: true, revisitAcceptedAt: true,
         rating: true, review: true,
+        extension: true,
         customer: { select: { id: true, name: true, phone: true, email: true } },
       },
     });
     if (!booking) throw new NotFoundException("Assigned job not found");
     return booking;
+  }
+
+  async createServiceExtension(
+    userId: number,
+    id: number,
+    dto: CreateServiceExtensionDto,
+    files: Record<string, Express.Multer.File[]>,
+  ) {
+    const booking = await this.getProviderJob(userId, id);
+    if (booking.status !== ServiceBookingStatus.IN_PROGRESS && booking.status !== ServiceBookingStatus.COMPLETED) {
+      throw new BadRequestException("Extended work can be recorded only after the inspection has started");
+    }
+    if (!`${booking.categoryName} ${booking.serviceName}`.toLowerCase().includes("inspection")) {
+      throw new BadRequestException("Extended work is available only for inspection services");
+    }
+    const required = ["problemImage1", "problemImage2", "solvedImage1", "solvedImage2"];
+    const missing = required.filter((field) => !files[field]?.[0]);
+    if (missing.length) throw new BadRequestException("Two problem photos and two solved-work photos are required");
+
+    const extension = await this.prisma.serviceExtension.create({
+      data: {
+        bookingId: id,
+        serviceName: dto.serviceName.trim(),
+        customerName: dto.customerName.trim(),
+        problemImage1: `/uploads/service-extensions/${files.problemImage1[0].filename}`,
+        problemImage2: `/uploads/service-extensions/${files.problemImage2[0].filename}`,
+        solvedImage1: `/uploads/service-extensions/${files.solvedImage1[0].filename}`,
+        solvedImage2: `/uploads/service-extensions/${files.solvedImage2[0].filename}`,
+        durationMinutes: dto.durationMinutes,
+        charge: dto.charge,
+      },
+    }).catch((error) => {
+      if (error?.code === "P2002") throw new ConflictException("Extended work has already been submitted for this booking");
+      throw error;
+    });
+    this.notifications.notifyAdmins(
+      "SERVICE_EXTENSION_SUBMITTED",
+      "Extended service submitted",
+      `${dto.serviceName.trim()} was added to ${booking.bookingNumber} with a charge of Rs ${Number(dto.charge).toFixed(0)}.`,
+      { bookingId: booking.id, extensionId: extension.id, screen: "Services" },
+    ).catch(() => undefined);
+    return extension;
   }
 
   async acceptJob(userId: number, id: number) {
@@ -568,9 +638,24 @@ export class ServicesMarketplaceService {
         customer: { select: { id: true, name: true, phone: true } },
         provider: { select: { id: true, name: true, phone: true } },
         package: true,
+        extension: true,
       },
       orderBy: { updatedAt: "desc" },
       take: 100,
+    });
+  }
+
+  listExtensionsForAdmin() {
+    return this.prisma.serviceExtension.findMany({
+      include: {
+        booking: {
+          include: {
+            customer: { select: { id: true, name: true, phone: true } },
+            provider: { select: { id: true, name: true, phone: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
     });
   }
 

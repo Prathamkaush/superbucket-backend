@@ -333,11 +333,31 @@ model ServiceBooking {
   customer User            @relation("ServiceCustomer", fields: [customerId], references: [id], onDelete: Cascade)
   provider User?           @relation("ServiceProvider", fields: [providerId], references: [id], onDelete: SetNull)
   package  ServicePackage  @relation(fields: [packageId], references: [id])
+  extension ServiceExtension?
 
   @@index([customerId, createdAt])
   @@index([providerId, status])
   @@index([packageId, status])
   @@index([status, scheduledAt])
+}
+
+model ServiceExtension {
+  id                 Int      @id @default(autoincrement())
+  bookingId          Int      @unique
+  serviceName        String
+  customerName       String
+  problemImage1      String   @db.Text
+  problemImage2      String   @db.Text
+  solvedImage1       String   @db.Text
+  solvedImage2       String   @db.Text
+  durationMinutes    Int
+  charge             Decimal  @db.Decimal(10, 2)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  booking ServiceBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
 }
 
 // -----------------------------------------
@@ -1058,6 +1078,7 @@ model HomeOffer {
   subtitle    String
   buttonLabel String? @default("Claim")
   code        String?
+  phoneNumber String?
   icon        String? @default("tag")
   color       String? @default("#E30613")
   imageUrl    String? @db.Text
@@ -1080,6 +1101,11 @@ enum BusinessAdStatus {
   PAUSED
   EXPIRED
   ARCHIVED
+}
+
+enum BusinessAdType {
+  BUSINESS
+  LOCAL_SHOP
 }
 
 model BusinessAdPlan {
@@ -1105,6 +1131,7 @@ model BusinessAd {
   planId      Int
   plan        BusinessAdPlan   @relation(fields: [planId], references: [id], onDelete: Restrict)
   status      BusinessAdStatus @default(PENDING_REVIEW)
+  adType      BusinessAdType   @default(BUSINESS)
 
   businessName String
   category     String?
@@ -1131,6 +1158,7 @@ model BusinessAd {
 
   @@index([userId, createdAt])
   @@index([status, startsAt, expiresAt])
+  @@index([adType, status, startsAt, expiresAt])
   @@index([planId])
 }
 

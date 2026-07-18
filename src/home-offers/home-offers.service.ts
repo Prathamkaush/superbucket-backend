@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { BusinessAdStatus, WalletTransactionType } from "@prisma/client";
+import { BusinessAdStatus, BusinessAdType, WalletTransactionType } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   CreateBusinessAdDto,
@@ -48,7 +48,7 @@ export class HomeOffersService {
         take: 12,
         }),
         this.prisma.businessAd.findMany({
-          where: { status: BusinessAdStatus.ACTIVE, startsAt: { lte: now }, expiresAt: { gt: now } },
+          where: { adType: BusinessAdType.BUSINESS, status: BusinessAdStatus.ACTIVE, startsAt: { lte: now }, expiresAt: { gt: now } },
           orderBy: { startsAt: "desc" },
           take: 8,
         }),
@@ -59,11 +59,14 @@ export class HomeOffersService {
           businessAdId: ad.id,
           title: ad.businessName,
           subtitle: ad.offerText || ad.description,
-          buttonLabel: `Call ${ad.phone}`,
+          buttonLabel: "View details",
           code: ad.category,
           icon: "business",
           color: "#0B63CE",
           imageUrl: ad.imageUrl,
+          description: ad.description,
+          address: ad.address,
+          phone: ad.phone,
           sortOrder: -10,
           isActive: true,
           startsAt: ad.startsAt,
@@ -93,6 +96,30 @@ export class HomeOffersService {
     });
   }
 
+  async getActiveLocalShops() {
+    const now = new Date();
+    await this.expireAds();
+    return this.prisma.businessAd.findMany({
+      where: {
+        adType: BusinessAdType.LOCAL_SHOP,
+        status: BusinessAdStatus.ACTIVE,
+        startsAt: { lte: now },
+        expiresAt: { gt: now },
+      },
+      select: {
+        id: true,
+        businessName: true,
+        category: true,
+        description: true,
+        address: true,
+        phone: true,
+        offerText: true,
+        imageUrl: true,
+      },
+      orderBy: { startsAt: "desc" },
+    });
+  }
+
   async createBusinessAd(userId: number, dto: CreateBusinessAdDto, image?: string) {
     const plan = await this.prisma.businessAdPlan.findFirst({ where: { id: dto.planId, isActive: true } });
     if (!plan) throw new BadRequestException("Selected advertising package is unavailable");
@@ -108,6 +135,7 @@ export class HomeOffersService {
       data: {
         userId,
         planId: plan.id,
+        adType: dto.adType === "LOCAL_SHOP" ? BusinessAdType.LOCAL_SHOP : BusinessAdType.BUSINESS,
         businessName,
         category: category || null,
         description,
@@ -158,6 +186,7 @@ export class HomeOffersService {
       data: {
         ...planData,
         ...(dto.businessName !== undefined && { businessName: dto.businessName.trim() }),
+        ...(dto.adType !== undefined && { adType: dto.adType === "LOCAL_SHOP" ? BusinessAdType.LOCAL_SHOP : BusinessAdType.BUSINESS }),
         ...(dto.category !== undefined && { category: dto.category?.trim() || null }),
         ...(dto.description !== undefined && { description: dto.description.trim() }),
         ...(dto.address !== undefined && { address: dto.address.trim() }),
@@ -392,6 +421,9 @@ export class HomeOffersService {
         buttonLabel: dto.buttonLabel?.trim() || "Claim",
       }),
       ...(dto.code !== undefined && { code: dto.code?.trim() || null }),
+      ...(dto.phoneNumber !== undefined && {
+        phoneNumber: dto.phoneNumber?.replace(/[^\d+]/g, "").trim() || null,
+      }),
       ...(dto.icon !== undefined && { icon: dto.icon?.trim() || "tag" }),
       ...(dto.color !== undefined && { color: dto.color?.trim() || "#E30613" }),
       ...(dto.sortOrder !== undefined && { sortOrder: Number(dto.sortOrder) || 0 }),

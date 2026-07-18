@@ -10,6 +10,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  MaxLength,
   Max,
   Min,
 } from "class-validator";
@@ -67,6 +68,13 @@ export class CancelServiceBookingDto {
 
 export class RequestServiceRevisitDto {
   @IsOptional() @IsString() reason?: string;
+}
+
+export class CreateServiceExtensionDto {
+  @IsString() @IsNotEmpty() @MaxLength(100) serviceName: string;
+  @IsString() @IsNotEmpty() @MaxLength(100) customerName: string;
+  @Type(() => Number) @IsInt() @Min(1) @Max(1440) durationMinutes: number;
+  @Type(() => Number) @IsNumber() @Min(0) charge: number;
 }
 
 export class AcceptServiceRevisitDto {

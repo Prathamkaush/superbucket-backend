@@ -1,0 +1,2 @@
+ALTER TABLE `HomeOffer`
+  ADD COLUMN `phoneNumber` VARCHAR(20) NULL;
