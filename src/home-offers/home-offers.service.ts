@@ -424,6 +424,9 @@ export class HomeOffersService {
       ...(dto.phoneNumber !== undefined && {
         phoneNumber: dto.phoneNumber?.replace(/[^\d+]/g, "").trim() || null,
       }),
+      ...(dto.whatsappNumber !== undefined && {
+        whatsappNumber: dto.whatsappNumber?.replace(/[^\d+]/g, "").trim() || null,
+      }),
       ...(dto.icon !== undefined && { icon: dto.icon?.trim() || "tag" }),
       ...(dto.color !== undefined && { color: dto.color?.trim() || "#E30613" }),
       ...(dto.sortOrder !== undefined && { sortOrder: Number(dto.sortOrder) || 0 }),

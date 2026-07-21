@@ -32,6 +32,11 @@ export class CreateHomeOfferDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(20)
+  whatsappNumber?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(40)
   code?: string;
 

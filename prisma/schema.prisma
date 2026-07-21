@@ -1079,6 +1079,7 @@ model HomeOffer {
   buttonLabel String? @default("Claim")
   code        String?
   phoneNumber String?
+  whatsappNumber String?
   icon        String? @default("tag")
   color       String? @default("#E30613")
   imageUrl    String? @db.Text
