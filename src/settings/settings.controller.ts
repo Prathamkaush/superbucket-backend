@@ -4,6 +4,7 @@ import {
   Patch,
   Body,
   UploadedFile,
+  UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
 import { SettingsService } from "./settings.service";
@@ -11,6 +12,8 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
 import { extname } from "path";
 import { mkdirSync } from "fs";
+import { AdminGuard } from "../auth/admin.guard";
+import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
 
 // ✅ Swagger
 import {
@@ -62,6 +65,7 @@ export class SettingsController {
     },
   })
   @Patch("profile")
+  @UseGuards(JwtAuthGuard, AdminGuard)
   async updateProfile(@Body() body: any) {
     return this.service.updateProfile(body);
   }
@@ -86,6 +90,7 @@ export class SettingsController {
     },
   })
   @Patch("store")
+  @UseGuards(JwtAuthGuard, AdminGuard)
   @UseInterceptors(
     FileInterceptor("logo", {
       storage: SettingsController.settingsStorage,
@@ -113,6 +118,7 @@ export class SettingsController {
     },
   })
   @Patch("general")
+  @UseGuards(JwtAuthGuard, AdminGuard)
   async updateGeneral(@Body() body: any) {
     return this.service.updateGeneral(body);
   }

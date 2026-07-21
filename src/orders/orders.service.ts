@@ -6,7 +6,6 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { Prisma , OrderStatus, UserRole, WalletTransactionType } from "@prisma/client";
-import { getDelhiveryRate } from "../delivery/delhivery-rates.service";
 import { CouponsService } from "../coupons/coupons.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { randomInt } from "crypto";
@@ -42,6 +41,15 @@ export class OrdersService {
     private couponsService: CouponsService,
     private notifications: NotificationsService,
   ) {}
+
+  private async fixedDeliveryCharge(itemsTotal: number) {
+    if (itemsTotal < 1 || itemsTotal > 1000) return null;
+    const settings = await this.prisma.settings.findFirst({
+      select: { deliveryChargeUpTo1000: true },
+    });
+    const configuredCharge = Number(settings?.deliveryChargeUpTo1000 ?? 33);
+    return Number.isFinite(configuredCharge) ? Math.max(0, configuredCharge) : 33;
+  }
 
   // ================= ADMIN =================
 
@@ -453,21 +461,12 @@ async createOrder(
 
   /* ================= SHIPPING ================= */
   let shippingCharge = 0;
+  let deliveryPartnerEarning = 0;
+  const configuredLocalCharge = await this.fixedDeliveryCharge(itemsTotal);
 
-  if (itemsTotalWithGst < 2999) {
-    try {
-      shippingCharge = await getDelhiveryRate({
-        pickupPin: process.env.DELHIVERY_PICKUP_PIN!,
-        deliveryPin: String(address.pincode),
-        weightKg: chargeableWeight,
-        cod: paymentMethod === "COD",
-        codAmount: paymentMethod === "COD" ? itemsTotalWithGst : 0,
-      });
-    } catch {
-      throw new BadRequestException(
-        "Unable to calculate shipping for this address"
-      );
-    }
+  if (configuredLocalCharge !== null) {
+    shippingCharge = configuredLocalCharge;
+    deliveryPartnerEarning = configuredLocalCharge;
   }
 
   const subtotal = itemsTotalWithGst + shippingCharge;
@@ -504,6 +503,7 @@ async createOrder(
         totalAmount: itemsTotal,
         totalGst: gstTotal,
         shippingCharge,
+        deliveryPartnerEarning,
         couponCode: couponCodeApplied,
         couponDiscount,
         finalAmount: payable,
@@ -1063,20 +1063,9 @@ async previewOrder(
   );
 
   let shippingCharge = 0;
+  const configuredLocalCharge = await this.fixedDeliveryCharge(itemsTotal);
 
-  if (itemsTotalWithGst < 2999) {
-    try {
-      shippingCharge = await getDelhiveryRate({
-        pickupPin: process.env.DELHIVERY_PICKUP_PIN!,
-        deliveryPin: String(address.pincode),
-        weightKg,
-        cod: paymentMethod === "COD",
-        codAmount: paymentMethod === "COD" ? itemsTotalWithGst : 0,
-      });
-    } catch {
-      shippingCharge = 100;
-    }
-  }
+  if (configuredLocalCharge !== null) shippingCharge = configuredLocalCharge;
 
   const subtotal = itemsTotalWithGst + shippingCharge;
 

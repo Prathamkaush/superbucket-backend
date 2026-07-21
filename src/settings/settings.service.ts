@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 
 const DEFAULT_DELIVERY_SLOT_TIMES = ["10:00 AM", "1:00 PM", "5:00 PM", "8:00 PM"];
@@ -82,6 +82,14 @@ export class SettingsService {
         .map((value) => String(value || "").trim())
         .filter(Boolean)
         .slice(0, 8);
+    }
+
+    if (dto.deliveryChargeUpTo1000 !== undefined) {
+      const charge = Number(dto.deliveryChargeUpTo1000);
+      if (!Number.isFinite(charge) || charge < 0 || charge > 1000) {
+        throw new BadRequestException("Delivery charge must be between Rs 0 and Rs 1,000");
+      }
+      data.deliveryChargeUpTo1000 = charge;
     }
 
     return this.prisma.settings.update({

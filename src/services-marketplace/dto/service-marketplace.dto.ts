@@ -5,6 +5,7 @@ import {
   IsDateString,
   IsEnum,
   IsInt,
+  IsIn,
   IsNotEmpty,
   IsNumber,
   IsObject,
@@ -34,32 +35,39 @@ export class UpdateServiceCategoryDto {
   @IsOptional() @Type(() => Number) @IsInt() sortOrder?: number;
 }
 
-export class CreateServicePackageDto {
-  @Type(() => Number) @IsInt() categoryId: number;
-  @IsString() @IsNotEmpty() name: string;
-  @IsOptional() @IsString() description?: string;
-  @Type(() => Number) @IsNumber() @Min(0) price: number;
-  @Type(() => Number) @IsInt() @Min(15) durationMinutes: number;
-  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(100) platformFeePercent?: number;
-  @IsOptional() @IsBoolean() isActive?: boolean;
-}
-
-export class UpdateServicePackageDto {
-  @IsOptional() @Type(() => Number) @IsInt() categoryId?: number;
-  @IsOptional() @IsString() @IsNotEmpty() name?: string;
-  @IsOptional() @IsString() description?: string;
-  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) price?: number;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(15) durationMinutes?: number;
-  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(100) platformFeePercent?: number;
-  @IsOptional() @IsBoolean() isActive?: boolean;
-}
-
 export class CreateServiceBookingDto {
   @Type(() => Number) @IsInt() packageId: number;
   @IsOptional() @Type(() => Number) @IsInt() providerId?: number;
   @IsDateString() scheduledAt: string;
   @IsObject() address: Record<string, unknown>;
   @IsOptional() @IsString() customerNote?: string;
+}
+
+export class CreateServiceRequestDto {
+  @Type(() => Number) @IsInt() categoryId: number;
+  @IsDateString() scheduledAt: string;
+  @IsString() @IsNotEmpty() address: string;
+  @IsString() @IsNotEmpty() @MaxLength(1000) description: string;
+}
+
+export class SendServiceMessageDto {
+  @IsString() @IsNotEmpty() @MaxLength(2000) body: string;
+}
+
+export class SubmitServiceQuoteDto {
+  @Type(() => Number) @IsNumber() @Min(0) amount: number;
+  @IsOptional() @IsString() @MaxLength(1000) note?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(1440) durationMinutes?: number;
+  @IsOptional() @IsDateString() scheduledAt?: string;
+}
+
+export class NegotiateServiceQuoteDto {
+  @IsString() @IsNotEmpty() @MaxLength(1000) message: string;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) amount?: number;
+}
+
+export class PayServiceBookingDto {
+  @IsOptional() @IsIn(["CASH", "UPI", "DIRECT"]) method?: "CASH" | "UPI" | "DIRECT";
 }
 
 export class CancelServiceBookingDto {

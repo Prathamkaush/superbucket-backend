@@ -16,16 +16,19 @@ import { NotificationsService } from "../notifications/notifications.service";
 import {
   CancelServiceBookingDto,
   CreateServiceBookingDto,
+  CreateServiceRequestDto,
   CreateServiceCategoryDto,
   CreateServiceExtensionDto,
-  CreateServicePackageDto,
   AcceptServiceRevisitDto,
   RequestServiceRevisitDto,
   ReviewServiceBookingDto,
+  NegotiateServiceQuoteDto,
+  PayServiceBookingDto,
+  SendServiceMessageDto,
+  SubmitServiceQuoteDto,
   UpdateProviderApprovalDto,
   UpdateProviderJobStatusDto,
   UpdateServiceCategoryDto,
-  UpdateServicePackageDto,
   UpsertProviderProfileDto,
 } from "./dto/service-marketplace.dto";
 
@@ -115,13 +118,13 @@ export class ServicesMarketplaceService {
       ? await Promise.all([
           this.prisma.serviceBooking.groupBy({
             by: ["providerId"],
-            where: { providerId: { in: userIds }, status: ServiceBookingStatus.COMPLETED, rating: { not: null } },
+            where: { providerId: { in: userIds }, status: { in: [ServiceBookingStatus.COMPLETED, ServiceBookingStatus.PAID] }, rating: { not: null } },
             _avg: { rating: true },
             _count: { rating: true },
           }),
           this.prisma.serviceBooking.groupBy({
             by: ["providerId"],
-            where: { providerId: { in: userIds }, status: ServiceBookingStatus.COMPLETED },
+            where: { providerId: { in: userIds }, status: { in: [ServiceBookingStatus.COMPLETED, ServiceBookingStatus.PAID] } },
             _count: { id: true },
           }),
         ])
@@ -189,7 +192,7 @@ export class ServicesMarketplaceService {
     }
 
     const price = Number(servicePackage.price);
-    const platformFee = Number((price * Number(servicePackage.platformFeePercent) / 100).toFixed(2));
+    const platformFee = 0;
     const bookingNumber = `SW${Date.now()}${randomInt(100, 1000)}`;
     let providerId: number | null = null;
     if (dto.providerId) {
@@ -222,7 +225,7 @@ export class ServicesMarketplaceService {
         categoryName: servicePackage.category.name,
         price,
         platformFee,
-        providerEarning: price - platformFee,
+        providerEarning: price,
         completionOtp: randomInt(1000, 10000).toString(),
       },
       include: { package: true },
@@ -246,18 +249,187 @@ export class ServicesMarketplaceService {
     return booking;
   }
 
+  async createServiceRequest(
+    customerId: number,
+    dto: CreateServiceRequestDto,
+    images: Express.Multer.File[],
+  ) {
+    const categoryId = Number(dto.categoryId);
+    const servicePackage = await this.prisma.servicePackage.findFirst({
+      where: { categoryId, category: { isActive: true } },
+      include: { category: true },
+      orderBy: { price: "asc" },
+    });
+    if (!servicePackage) throw new NotFoundException("This service category is unavailable");
+
+    const scheduledAt = new Date(dto.scheduledAt);
+    if (Number.isNaN(scheduledAt.getTime()) || scheduledAt.getTime() < Date.now()) {
+      throw new BadRequestException("Choose a future visit time");
+    }
+
+    let address: Record<string, any>;
+    try {
+      address = JSON.parse(dto.address);
+    } catch {
+      throw new BadRequestException("Address is invalid");
+    }
+    for (const field of ["name", "phone", "street", "city", "state", "pincode"]) {
+      if (!String(address[field] || "").trim()) throw new BadRequestException(`Address ${field} is required`);
+    }
+
+    const issueImages = images.map((file) => `/services/request-images/${file.filename}`);
+    const booking = await this.prisma.serviceBooking.create({
+      data: {
+        bookingNumber: `SR${Date.now()}${randomInt(100, 1000)}`,
+        customerId,
+        packageId: servicePackage.id,
+        status: ServiceBookingStatus.PENDING,
+        scheduledAt,
+        address: address as Prisma.InputJsonValue,
+        customerNote: dto.description.trim(),
+        issueImages,
+        serviceName: servicePackage.category.name,
+        categoryName: servicePackage.category.name,
+        price: 0,
+        platformFee: 0,
+        providerEarning: 0,
+        completionOtp: randomInt(1000, 10000).toString(),
+      },
+      include: { package: true },
+    });
+
+    await Promise.allSettled([
+      this.notifications.notifyServiceBookingCreated({
+        id: booking.id,
+        bookingNumber: booking.bookingNumber,
+        customerId,
+        providerId: null,
+        categoryId,
+        serviceName: booking.serviceName,
+      }),
+      this.notifications.notifyAdmins(
+        "SERVICE_REQUEST_CREATED",
+        "New service request",
+        `${booking.categoryName} request ${booking.bookingNumber} is searching for a nearby provider.`,
+        { bookingId: booking.id, screen: "Services" },
+      ),
+    ]);
+    return booking;
+  }
+
+  private async requireParticipant(userId: number, bookingId: number) {
+    const booking = await this.prisma.serviceBooking.findFirst({
+      where: { id: bookingId, OR: [{ customerId: userId }, { providerId: userId }] },
+    });
+    if (!booking) throw new ForbiddenException("You cannot access this service conversation");
+    if (!booking.providerId) throw new BadRequestException("Chat starts after a provider accepts the request");
+    return booking;
+  }
+
+  async getMessages(userId: number, bookingId: number) {
+    await this.requireParticipant(userId, bookingId);
+    return this.prisma.serviceMessage.findMany({
+      where: { bookingId },
+      include: { sender: { select: { id: true, name: true, profileImage: true } } },
+      orderBy: { createdAt: "asc" },
+      take: 200,
+    });
+  }
+
+  async sendMessage(userId: number, bookingId: number, dto: SendServiceMessageDto) {
+    const booking = await this.requireParticipant(userId, bookingId);
+    if (booking.status === ServiceBookingStatus.CANCELLED || booking.status === ServiceBookingStatus.REJECTED) {
+      throw new BadRequestException("This conversation is closed");
+    }
+    return this.prisma.serviceMessage.create({
+      data: { bookingId, senderId: userId, body: dto.body.trim() },
+      include: { sender: { select: { id: true, name: true, profileImage: true } } },
+    });
+  }
+
+  async submitQuote(userId: number, id: number, dto: SubmitServiceQuoteDto) {
+    const booking = await this.getProviderJob(userId, id);
+    if (
+      booking.status !== ServiceBookingStatus.ACCEPTED &&
+      booking.status !== ServiceBookingStatus.NEGOTIATING &&
+      booking.status !== ServiceBookingStatus.QUOTED
+    ) {
+      throw new BadRequestException("A quote cannot be sent at this stage");
+    }
+    const amount = Number(dto.amount);
+    if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException("Quote amount must be greater than zero");
+    const updated = await this.prisma.serviceBooking.update({
+      where: { id },
+      data: {
+        status: ServiceBookingStatus.QUOTED,
+        quoteAmount: amount,
+        quoteNote: dto.note?.trim() || null,
+        quotedDurationMinutes: dto.durationMinutes || null,
+        quoteSentAt: new Date(),
+        ...(dto.scheduledAt ? { scheduledAt: new Date(dto.scheduledAt) } : {}),
+      },
+    });
+    await this.prisma.serviceMessage.create({
+      data: { bookingId: id, senderId: userId, body: `Quote sent: Rs ${amount.toFixed(0)}${dto.note ? ` — ${dto.note.trim()}` : ""}` },
+    });
+    return updated;
+  }
+
+  async negotiateQuote(customerId: number, id: number, dto: NegotiateServiceQuoteDto) {
+    const booking = await this.getCustomerBooking(customerId, id);
+    if (booking.status !== ServiceBookingStatus.QUOTED) throw new BadRequestException("There is no active quote to negotiate");
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.serviceBooking.update({ where: { id }, data: { status: ServiceBookingStatus.NEGOTIATING } });
+      await tx.serviceMessage.create({
+        data: {
+          bookingId: id,
+          senderId: customerId,
+          body: dto.amount ? `Counter offer: Rs ${Number(dto.amount).toFixed(0)} — ${dto.message.trim()}` : dto.message.trim(),
+        },
+      });
+      return updated;
+    });
+  }
+
+  async acceptQuote(customerId: number, id: number) {
+    const booking = await this.getCustomerBooking(customerId, id);
+    if (booking.status !== ServiceBookingStatus.QUOTED || !booking.quoteAmount) {
+      throw new BadRequestException("There is no quote available to accept");
+    }
+    const amount = Number(booking.quoteAmount);
+    return this.prisma.serviceBooking.update({
+      where: { id },
+      data: {
+        status: ServiceBookingStatus.CONFIRMED,
+        price: amount,
+        platformFee: 0,
+        providerEarning: amount,
+        quoteAcceptedAt: new Date(),
+      },
+    });
+  }
+
+  async markPaid(customerId: number, id: number, dto: PayServiceBookingDto) {
+    const booking = await this.getCustomerBooking(customerId, id);
+    if (booking.status !== ServiceBookingStatus.COMPLETED) throw new BadRequestException("Payment is available after job completion");
+    return this.prisma.serviceBooking.update({
+      where: { id },
+      data: { status: ServiceBookingStatus.PAID, paidAt: new Date(), paymentMethod: dto.method || "DIRECT" },
+    });
+  }
+
   private async attachProviderRatings(bookings: any[]) {
     const providerIds = [...new Set(bookings.map((item) => item.providerId).filter(Boolean))] as number[];
     if (!providerIds.length) return bookings;
     const ratings = await this.prisma.serviceBooking.groupBy({
       by: ["providerId"],
-      where: { providerId: { in: providerIds }, status: ServiceBookingStatus.COMPLETED, rating: { not: null } },
+      where: { providerId: { in: providerIds }, status: { in: [ServiceBookingStatus.COMPLETED, ServiceBookingStatus.PAID] }, rating: { not: null } },
       _avg: { rating: true },
       _count: { rating: true },
     });
     const completed = await this.prisma.serviceBooking.groupBy({
       by: ["providerId"],
-      where: { providerId: { in: providerIds }, status: ServiceBookingStatus.COMPLETED },
+      where: { providerId: { in: providerIds }, status: { in: [ServiceBookingStatus.COMPLETED, ServiceBookingStatus.PAID] } },
       _count: { id: true },
     });
     const ratingMap = new Map(ratings.map((item) => [item.providerId, item]));
@@ -296,36 +468,14 @@ export class ServicesMarketplaceService {
     return (await this.attachProviderRatings([booking]))[0];
   }
 
-  async getCustomerInvoice(customerId: number, id: number) {
-    const booking = await this.getCustomerBooking(customerId, id);
-    if (booking.status !== ServiceBookingStatus.COMPLETED) {
-      throw new BadRequestException("Invoice is available after service completion");
-    }
-    const baseCharge = Number(booking.price);
-    const extensionCharge = Number(booking.extension?.charge || 0);
-    return {
-      invoiceNumber: `SVC-${booking.bookingNumber}`,
-      issuedAt: booking.completedAt || booking.updatedAt,
-      bookingNumber: booking.bookingNumber,
-      customerName: booking.customer?.name || (booking.address as any)?.name || "Customer",
-      providerName: booking.provider?.name || "Service Partner",
-      serviceName: booking.serviceName,
-      scheduledAt: booking.scheduledAt,
-      baseCharge,
-      extension: booking.extension ? {
-        serviceName: booking.extension.serviceName,
-        durationMinutes: booking.extension.durationMinutes,
-        charge: extensionCharge,
-      } : null,
-      total: baseCharge + extensionCharge,
-    };
-  }
-
   async cancelBooking(customerId: number, id: number, dto: CancelServiceBookingDto) {
     const booking = await this.getCustomerBooking(customerId, id);
     if (
       booking.status !== ServiceBookingStatus.PENDING &&
-      booking.status !== ServiceBookingStatus.ACCEPTED
+      booking.status !== ServiceBookingStatus.ACCEPTED &&
+      booking.status !== ServiceBookingStatus.QUOTED &&
+      booking.status !== ServiceBookingStatus.NEGOTIATING &&
+      booking.status !== ServiceBookingStatus.CONFIRMED
     ) {
       throw new BadRequestException("This booking can no longer be cancelled");
     }
@@ -365,7 +515,7 @@ export class ServicesMarketplaceService {
 
   async reviewBooking(customerId: number, id: number, dto: ReviewServiceBookingDto) {
     const booking = await this.getCustomerBooking(customerId, id);
-    if (booking.status !== ServiceBookingStatus.COMPLETED) {
+    if (booking.status !== ServiceBookingStatus.COMPLETED && booking.status !== ServiceBookingStatus.PAID) {
       throw new BadRequestException("Only completed bookings can be reviewed");
     }
     if (booking.rating) throw new ConflictException("This booking has already been reviewed");
@@ -382,12 +532,12 @@ export class ServicesMarketplaceService {
         include: { user: { select: providerUserSelect }, services: { include: { category: true } } },
       }),
       this.prisma.serviceBooking.aggregate({
-        where: { providerId: userId, status: ServiceBookingStatus.COMPLETED, rating: { not: null } },
+        where: { providerId: userId, status: { in: [ServiceBookingStatus.COMPLETED, ServiceBookingStatus.PAID] }, rating: { not: null } },
         _avg: { rating: true }, _count: { rating: true },
       }),
-      this.prisma.serviceBooking.count({ where: { providerId: userId, status: ServiceBookingStatus.COMPLETED } }),
+      this.prisma.serviceBooking.count({ where: { providerId: userId, status: { in: [ServiceBookingStatus.COMPLETED, ServiceBookingStatus.PAID] } } }),
       this.prisma.serviceBooking.findMany({
-        where: { providerId: userId, status: ServiceBookingStatus.COMPLETED, rating: { not: null } },
+        where: { providerId: userId, status: { in: [ServiceBookingStatus.COMPLETED, ServiceBookingStatus.PAID] }, rating: { not: null } },
         select: { id: true, serviceName: true, rating: true, review: true, completedAt: true, customer: { select: { name: true } } },
         orderBy: { completedAt: "desc" }, take: 10,
       }),
@@ -468,27 +618,36 @@ export class ServicesMarketplaceService {
   async getAvailableJobs(userId: number) {
     const profile = await this.requireApprovedProvider(userId);
     if (!profile.isOnline) return [];
-    return this.prisma.serviceBooking.findMany({
+    const jobs = await this.prisma.serviceBooking.findMany({
       where: {
         status: ServiceBookingStatus.PENDING,
         providerId: null,
+        declines: { none: { providerId: userId } },
         package: { categoryId: { in: profile.services.map((item) => item.categoryId) } },
       },
       select: {
         id: true, bookingNumber: true, categoryName: true, serviceName: true,
-        scheduledAt: true, address: true, customerNote: true, providerEarning: true,
+        scheduledAt: true, address: true, customerNote: true, issueImages: true, providerEarning: true,
         createdAt: true,
       },
-      orderBy: { scheduledAt: "asc" },
+      orderBy: { createdAt: "asc" },
+      take: 25,
     });
+    const city = String(profile.city || "").trim().toLowerCase();
+    const nearby = city
+      ? jobs.filter((job) => String((job.address as any)?.city || "").trim().toLowerCase() === city)
+      : jobs;
+    return nearby.slice(0, 5);
   }
 
   getProviderJobs(userId: number) {
     return this.prisma.serviceBooking.findMany({
       where: { providerId: userId },
       select: {
-        id: true, bookingNumber: true, categoryName: true, serviceName: true,
-        scheduledAt: true, address: true, customerNote: true, providerEarning: true,
+        id: true, providerId: true, bookingNumber: true, categoryName: true, serviceName: true,
+        scheduledAt: true, address: true, customerNote: true, issueImages: true, providerEarning: true,
+        quoteAmount: true, quoteNote: true, quotedDurationMinutes: true, quoteSentAt: true, paidAt: true,
+        beforeImages: true, afterImages: true,
         status: true, acceptedAt: true, startedAt: true, completedAt: true,
         cancellationReason: true, cancelledAt: true,
         revisitReason: true, revisitRequestedAt: true, revisitAcceptedAt: true,
@@ -504,8 +663,10 @@ export class ServicesMarketplaceService {
     const booking = await this.prisma.serviceBooking.findFirst({
       where: { id, providerId: userId },
       select: {
-        id: true, bookingNumber: true, categoryName: true, serviceName: true,
-        scheduledAt: true, address: true, customerNote: true, providerEarning: true,
+        id: true, providerId: true, bookingNumber: true, categoryName: true, serviceName: true,
+        scheduledAt: true, address: true, customerNote: true, issueImages: true, providerEarning: true,
+        quoteAmount: true, quoteNote: true, quotedDurationMinutes: true, quoteSentAt: true, paidAt: true,
+        beforeImages: true, afterImages: true,
         status: true, acceptedAt: true, startedAt: true, completedAt: true,
         cancellationReason: true, revisitReason: true, revisitAcceptedAt: true,
         rating: true, review: true,
@@ -579,6 +740,20 @@ export class ServicesMarketplaceService {
     return accepted;
   }
 
+  async declineJob(userId: number, id: number) {
+    await this.requireApprovedProvider(userId);
+    const booking = await this.prisma.serviceBooking.findFirst({
+      where: { id, providerId: null, status: ServiceBookingStatus.PENDING },
+    });
+    if (!booking) throw new NotFoundException("Service request is no longer available");
+    await this.prisma.serviceRequestDecline.upsert({
+      where: { bookingId_providerId: { bookingId: id, providerId: userId } },
+      create: { bookingId: id, providerId: userId },
+      update: {},
+    });
+    return { declined: true };
+  }
+
   private async getProviderJob(userId: number, id: number) {
     const booking = await this.prisma.serviceBooking.findFirst({ where: { id, providerId: userId } });
     if (!booking) throw new NotFoundException("Assigned job not found");
@@ -588,9 +763,9 @@ export class ServicesMarketplaceService {
   async updateJobStatus(userId: number, id: number, dto: UpdateProviderJobStatusDto) {
     const booking = await this.getProviderJob(userId, id);
     const allowed: Partial<Record<ServiceBookingStatus, ServiceBookingStatus[]>> = {
-      ACCEPTED: [ServiceBookingStatus.EN_ROUTE, ServiceBookingStatus.REJECTED],
+      ACCEPTED: [ServiceBookingStatus.REJECTED],
+      CONFIRMED: [ServiceBookingStatus.EN_ROUTE],
       EN_ROUTE: [ServiceBookingStatus.IN_PROGRESS],
-      IN_PROGRESS: [ServiceBookingStatus.COMPLETED],
     };
     if (!allowed[booking.status]?.includes(dto.status)) {
       throw new BadRequestException(`Cannot change booking from ${booking.status} to ${dto.status}`);
@@ -608,6 +783,35 @@ export class ServicesMarketplaceService {
     }
     const updated = await this.prisma.serviceBooking.update({ where: { id }, data });
     await this.notifications.notifyServiceBookingStatus(updated).catch(() => undefined);
+    return updated;
+  }
+
+  async completeJob(userId: number, id: number, files: Record<string, Express.Multer.File[]>) {
+    const booking = await this.getProviderJob(userId, id);
+    if (booking.status !== ServiceBookingStatus.IN_PROGRESS) {
+      throw new BadRequestException("Start the job before submitting completed work");
+    }
+    const beforeImages = (files.beforeImages || []).map((file) => `/services/request-images/${file.filename}`);
+    const afterImages = (files.afterImages || []).map((file) => `/services/request-images/${file.filename}`);
+    if (!afterImages.length) throw new BadRequestException("Add at least one completed-work photo");
+    const updated = await this.prisma.serviceBooking.update({
+      where: { id },
+      data: {
+        status: ServiceBookingStatus.COMPLETED,
+        completedAt: new Date(),
+        beforeImages,
+        afterImages,
+      },
+    });
+    await Promise.allSettled([
+      this.notifications.notifyServiceBookingStatus(updated),
+      this.notifications.notifyAdmins(
+        "SERVICE_JOB_COMPLETED",
+        "Service job completed",
+        `${booking.bookingNumber} was marked complete with work photos.`,
+        { bookingId: booking.id, screen: "Services" },
+      ),
+    ]);
     return updated;
   }
 
@@ -660,16 +864,24 @@ export class ServicesMarketplaceService {
   }
 
   createCategory(dto: CreateServiceCategoryDto, image?: string) {
-    return this.prisma.serviceCategory.create({ data: { ...dto, image: image ? `/services/images/${image}` : null } });
+    return this.prisma.serviceCategory.create({
+      data: {
+        ...dto,
+        image: image ? `/services/images/${image}` : null,
+        packages: {
+          create: {
+            name: "General service request",
+            description: "Internal request template. Pricing is set by the provider quote.",
+            price: 0,
+            durationMinutes: 60,
+            platformFeePercent: 0,
+          },
+        },
+      },
+    });
   }
   updateCategory(id: number, dto: UpdateServiceCategoryDto, image?: string) {
     return this.prisma.serviceCategory.update({ where: { id }, data: { ...dto, ...(image ? { image: `/services/images/${image}` } : {}) } });
-  }
-  createPackage(dto: CreateServicePackageDto) {
-    return this.prisma.servicePackage.create({ data: dto });
-  }
-  updatePackage(id: number, dto: UpdateServicePackageDto) {
-    return this.prisma.servicePackage.update({ where: { id }, data: dto });
   }
   listProviders(status?: ServiceProviderStatus) {
     return this.prisma.serviceProviderProfile.findMany({

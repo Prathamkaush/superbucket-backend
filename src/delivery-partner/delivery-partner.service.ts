@@ -50,6 +50,7 @@ export class DeliveryPartnerService {
       totalAmount: true,
       totalGst: true,
       shippingCharge: true,
+      deliveryPartnerEarning: true,
       finalAmount: true,
       status: true,
       address: true,

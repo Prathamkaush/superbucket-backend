@@ -52,10 +52,14 @@ enum ServiceProviderStatus {
 enum ServiceBookingStatus {
   PENDING
   ACCEPTED
+  QUOTED
+  NEGOTIATING
+  CONFIRMED
   EN_ROUTE
   IN_PROGRESS
   REVISIT_REQUESTED
   COMPLETED
+  PAID
   CANCELLED
   REJECTED
 }
@@ -113,6 +117,8 @@ model User {
   providerProfile         ServiceProviderProfile?
   customerServiceBookings ServiceBooking[] @relation("ServiceCustomer")
   providerServiceBookings ServiceBooking[] @relation("ServiceProvider")
+  serviceMessages         ServiceMessage[] @relation("ServiceMessageSender")
+  declinedServiceRequests ServiceRequestDecline[] @relation("ServiceRequestDeclinedBy")
 
   @@index([createdById])
   @@index([staffShopId])
@@ -311,12 +317,22 @@ model ServiceBooking {
   scheduledAt        DateTime
   address             Json
   customerNote        String?              @db.Text
+  issueImages         Json?
   cancellationReason String?
   serviceName         String
   categoryName        String
   price               Decimal              @db.Decimal(10, 2)
   platformFee         Decimal              @db.Decimal(10, 2)
   providerEarning     Decimal              @db.Decimal(10, 2)
+  quoteAmount         Decimal?             @db.Decimal(10, 2)
+  quoteNote           String?              @db.Text
+  quotedDurationMinutes Int?
+  quoteSentAt         DateTime?
+  quoteAcceptedAt     DateTime?
+  paymentMethod       String?
+  paidAt              DateTime?
+  beforeImages        Json?
+  afterImages         Json?
   completionOtp       String
   acceptedAt          DateTime?
   startedAt           DateTime?
@@ -334,11 +350,41 @@ model ServiceBooking {
   provider User?           @relation("ServiceProvider", fields: [providerId], references: [id], onDelete: SetNull)
   package  ServicePackage  @relation(fields: [packageId], references: [id])
   extension ServiceExtension?
+  messages  ServiceMessage[]
+  declines  ServiceRequestDecline[]
 
   @@index([customerId, createdAt])
   @@index([providerId, status])
   @@index([packageId, status])
   @@index([status, scheduledAt])
+}
+
+model ServiceMessage {
+  id        Int      @id @default(autoincrement())
+  bookingId Int
+  senderId  Int
+  body      String   @db.Text
+  imageUrl  String?  @db.Text
+  createdAt DateTime @default(now())
+
+  booking ServiceBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  sender  User           @relation("ServiceMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId, createdAt])
+  @@index([senderId])
+}
+
+model ServiceRequestDecline {
+  id         Int      @id @default(autoincrement())
+  bookingId  Int
+  providerId Int
+  createdAt  DateTime @default(now())
+
+  booking  ServiceBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  provider User           @relation("ServiceRequestDeclinedBy", fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([bookingId, providerId])
+  @@index([providerId, createdAt])
 }
 
 model ServiceExtension {
@@ -783,6 +829,7 @@ model Order {
   totalAmount    Decimal @db.Decimal(10, 2) // items total
   totalGst       Decimal @default(0) @db.Decimal(10, 2)
   shippingCharge Decimal @db.Decimal(10, 2) // NEW
+  deliveryPartnerEarning Decimal @default(0) @db.Decimal(10, 2)
   finalAmount    Decimal @db.Decimal(10, 2) // NEW
 
   totalWeight      Decimal?  @db.Decimal(6, 2) // NEW (KG)
@@ -905,6 +952,7 @@ model Settings {
   currency        String?  @default("INR")
   maintenanceMode Boolean  @default(false)
   deliverySlotTimes Json?
+  deliveryChargeUpTo1000 Decimal @default(33) @db.Decimal(10, 2)
   updatedAt       DateTime @updatedAt
 }
 

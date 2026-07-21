@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Get, NotFoundException, Param, ParseIntPipe, Patch, Post, Query, Req, Res, UploadedFile, UploadedFiles, UseGuards, UseInterceptors } from "@nestjs/common";
-import { FileFieldsInterceptor, FileInterceptor } from "@nestjs/platform-express";
+import { FileFieldsInterceptor, FileInterceptor, FilesInterceptor } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
 import { existsSync, mkdirSync } from "fs";
 import { basename, extname, join } from "path";
@@ -8,11 +8,12 @@ import { ServiceProviderStatus } from "@prisma/client";
 import { AdminGuard } from "../auth/admin.guard";
 import { JwtAuthGuard } from "../auth/strategies/jwt-auth.guard";
 import {
-  AcceptServiceRevisitDto, CancelServiceBookingDto, CreateServiceBookingDto,
-  CreateServiceCategoryDto, CreateServiceExtensionDto, CreateServicePackageDto, RequestServiceRevisitDto,
-  ReviewServiceBookingDto, SetProviderAvailabilityDto,
+  AcceptServiceRevisitDto, CancelServiceBookingDto, CreateServiceBookingDto, CreateServiceRequestDto,
+  CreateServiceCategoryDto, CreateServiceExtensionDto, RequestServiceRevisitDto,
+  NegotiateServiceQuoteDto, PayServiceBookingDto, ReviewServiceBookingDto, SendServiceMessageDto,
+  SetProviderAvailabilityDto, SubmitServiceQuoteDto,
   UpdateProviderApprovalDto, UpdateProviderJobStatusDto, UpdateServiceCategoryDto,
-  UpdateServicePackageDto, UpsertProviderProfileDto,
+  UpsertProviderProfileDto,
 } from "./dto/service-marketplace.dto";
 import { ServicesMarketplaceService } from "./services-marketplace.service";
 
@@ -61,6 +62,26 @@ export class ServicesMarketplaceController {
       : cb(new BadRequestException("Only image files are allowed"), false),
   };
 
+  private static requestImageStorage = diskStorage({
+    destination: (_req, _file, cb) => {
+      const uploadPath = join(process.cwd(), "uploads", "service-requests");
+      mkdirSync(uploadPath, { recursive: true });
+      cb(null, uploadPath);
+    },
+    filename: (_req, file, cb) => {
+      const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+      cb(null, unique + extname(file.originalname).toLowerCase());
+    },
+  });
+
+  private static requestImageUpload = {
+    storage: ServicesMarketplaceController.requestImageStorage,
+    limits: { fileSize: 10 * 1024 * 1024, files: 6 },
+    fileFilter: (_req: any, file: Express.Multer.File, cb: any) => file.mimetype.startsWith("image/")
+      ? cb(null, true)
+      : cb(new BadRequestException("Only image files are allowed"), false),
+  };
+
   @Get("images/:filename")
   categoryImage(@Param("filename") filename: string, @Res() response: Response) {
     const safeFilename = basename(filename);
@@ -77,6 +98,16 @@ export class ServicesMarketplaceController {
     if (safeFilename !== filename) throw new BadRequestException("Invalid image filename");
     const filePath = join(process.cwd(), "uploads", "service-extensions", safeFilename);
     if (!existsSync(filePath)) throw new NotFoundException("Extension image not found");
+    response.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    return response.sendFile(filePath);
+  }
+
+  @Get("request-images/:filename")
+  requestImage(@Param("filename") filename: string, @Res() response: Response) {
+    const safeFilename = basename(filename);
+    if (safeFilename !== filename) throw new BadRequestException("Invalid image filename");
+    const filePath = join(process.cwd(), "uploads", "service-requests", safeFilename);
+    if (!existsSync(filePath)) throw new NotFoundException("Request image not found");
     response.setHeader("Cache-Control", "public, max-age=31536000, immutable");
     return response.sendFile(filePath);
   }
@@ -104,6 +135,13 @@ export class ServicesMarketplaceController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post("requests")
+  @UseInterceptors(FilesInterceptor("images", 6, ServicesMarketplaceController.requestImageUpload))
+  createRequest(@Req() req, @Body() dto: CreateServiceRequestDto, @UploadedFiles() images?: Express.Multer.File[]) {
+    return this.service.createServiceRequest(req.user.id, dto, images || []);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get("bookings/my")
   myBookings(@Req() req) { return this.service.getCustomerBookings(req.user.id); }
 
@@ -114,9 +152,33 @@ export class ServicesMarketplaceController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Get("bookings/:id/invoice")
-  invoice(@Req() req, @Param("id", ParseIntPipe) id: number) {
-    return this.service.getCustomerInvoice(req.user.id, id);
+  @Get("bookings/:id/messages")
+  messages(@Req() req, @Param("id", ParseIntPipe) id: number) {
+    return this.service.getMessages(req.user.id, id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("bookings/:id/messages")
+  sendMessage(@Req() req, @Param("id", ParseIntPipe) id: number, @Body() dto: SendServiceMessageDto) {
+    return this.service.sendMessage(req.user.id, id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch("bookings/:id/negotiate")
+  negotiate(@Req() req, @Param("id", ParseIntPipe) id: number, @Body() dto: NegotiateServiceQuoteDto) {
+    return this.service.negotiateQuote(req.user.id, id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch("bookings/:id/quote/accept")
+  acceptQuote(@Req() req, @Param("id", ParseIntPipe) id: number) {
+    return this.service.acceptQuote(req.user.id, id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch("bookings/:id/pay")
+  pay(@Req() req, @Param("id", ParseIntPipe) id: number, @Body() dto: PayServiceBookingDto) {
+    return this.service.markPaid(req.user.id, id, dto);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -191,6 +253,32 @@ export class ServicesMarketplaceController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Patch("provider/jobs/:id/decline")
+  declineJob(@Req() req, @Param("id", ParseIntPipe) id: number) {
+    return this.service.declineJob(req.user.id, id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch("provider/jobs/:id/quote")
+  quote(@Req() req, @Param("id", ParseIntPipe) id: number, @Body() dto: SubmitServiceQuoteDto) {
+    return this.service.submitQuote(req.user.id, id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("provider/jobs/:id/complete")
+  @UseInterceptors(FileFieldsInterceptor([
+    { name: "beforeImages", maxCount: 3 },
+    { name: "afterImages", maxCount: 3 },
+  ], ServicesMarketplaceController.requestImageUpload))
+  completeJob(
+    @Req() req,
+    @Param("id", ParseIntPipe) id: number,
+    @UploadedFiles() files?: Record<string, Express.Multer.File[]>,
+  ) {
+    return this.service.completeJob(req.user.id, id, files || {});
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Patch("provider/jobs/:id/status")
   updateJob(@Req() req, @Param("id", ParseIntPipe) id: number, @Body() dto: UpdateProviderJobStatusDto) {
     return this.service.updateJobStatus(req.user.id, id, dto);
@@ -218,16 +306,6 @@ export class ServicesMarketplaceController {
   @UseInterceptors(FileInterceptor("image", ServicesMarketplaceController.categoryImageUpload))
   updateCategory(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateServiceCategoryDto, @UploadedFile() image?: Express.Multer.File) {
     return this.service.updateCategory(id, dto, image?.filename);
-  }
-
-  @UseGuards(JwtAuthGuard, AdminGuard)
-  @Post("admin/packages")
-  createPackage(@Body() dto: CreateServicePackageDto) { return this.service.createPackage(dto); }
-
-  @UseGuards(JwtAuthGuard, AdminGuard)
-  @Patch("admin/packages/:id")
-  updatePackage(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateServicePackageDto) {
-    return this.service.updatePackage(id, dto);
   }
 
   @UseGuards(JwtAuthGuard, AdminGuard)
