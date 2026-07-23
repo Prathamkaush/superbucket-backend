@@ -173,7 +173,7 @@ export class AuthService {
       update: { isVerified: true },
       create: {
         phone: challenge.phone,
-        name: `Superbuket User ${challenge.phone.slice(-4)}`,
+        name: `IntiSeva User ${challenge.phone.slice(-4)}`,
         isVerified: true,
         role: UserRole.USER,
       },

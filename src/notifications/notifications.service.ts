@@ -399,7 +399,7 @@ export class NotificationsService {
     return this.notifyAdmins(
       "ADMIN_NEW_USER",
       "New user joined",
-      `${user.name || user.email || user.phone || "A new user"} joined Superbucket.`,
+      `${user.name || user.email || user.phone || "A new user"} joined IntiSeva.`,
       { userId: user.id, screen: "Users" },
     );
   }
