@@ -2,6 +2,10 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
+  HttpException,
+  InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateProductSeoDto } from './dto/update-product-seo.dto';
@@ -200,6 +204,8 @@ function mapNutritionFactInput(fact: any, index: number) {
 
 @Injectable()
 export class ProductsService {
+  private readonly logger = new Logger(ProductsService.name);
+
   constructor(
     private prisma: PrismaService,
     private smartParser: SmartBulkProductParser,
@@ -265,6 +271,12 @@ export class ProductsService {
   // CREATE PRODUCT
   // ----------------------------------
   async create(body: any, files: any) {
+    try {
+    const title = String(body.title || '').trim();
+    if (!title) {
+      throw new BadRequestException('Product name is required');
+    }
+
     const images = {
       img1: files?.image1?.[0]?.filename || null,
       img2: files?.image2?.[0]?.filename || null,
@@ -352,10 +364,20 @@ export class ProductsService {
       throw new BadRequestException('Category is required');
     }
 
-    await validateProductCatalogPath(this.prisma, categoryId, null, null);
+    await validateProductCatalogPath(
+      this.prisma,
+      categoryId,
+      typeId,
+      subtypeId,
+    );
 
     // -------------------- SLUG --------------------
-    const baseSlug = this.generateSlug(body.title);
+    const baseSlug = this.generateSlug(title);
+    if (!baseSlug) {
+      throw new BadRequestException(
+        'Product name must contain at least one letter or number',
+      );
+    }
     const exists = await this.prisma.product.findUnique({
       where: { slug: baseSlug },
     });
@@ -416,7 +438,7 @@ export class ProductsService {
 
       const product = await tx.product.create({
         data: {
-          title: body.title,
+          title,
           slug,
           description: body.description || '',
           shortDescription: body.shortDescription || null,
@@ -574,7 +596,7 @@ export class ProductsService {
       }
 
       // -------------------- VENDORS --------------------
-      const vendorInfo = body.vendorId ? JSON.parse(body.vendorId) : [];
+      const vendorInfo = parseJsonArray(body.vendorId, 'vendor information');
 
       if (Array.isArray(vendorInfo) && vendorInfo.length > 0) {
         await tx.productVendor.createMany({
@@ -593,6 +615,82 @@ export class ProductsService {
     });
     await this.clearProductCache();
     return product;
+    } catch (error: unknown) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        const target = Array.isArray(error.meta?.target)
+          ? error.meta.target.map(String)
+          : [String(error.meta?.target || '')];
+
+        if (error.code === 'P2002') {
+          if (target.some((field) => field.includes('sku'))) {
+            throw new ConflictException(
+              'A product variant with this SKU already exists. Use a unique SKU.',
+            );
+          }
+          if (target.some((field) => field.includes('barcode'))) {
+            throw new ConflictException(
+              'A product variant with this barcode already exists. Use a unique barcode.',
+            );
+          }
+          if (target.some((field) => field.includes('slug'))) {
+            throw new ConflictException(
+              'A product with the same generated URL name already exists. Change the product name and try again.',
+            );
+          }
+          throw new ConflictException(
+            `A product with the same ${target.filter(Boolean).join(', ') || 'unique value'} already exists.`,
+          );
+        }
+
+        if (error.code === 'P2003') {
+          throw new BadRequestException(
+            'A selected category, type, subtype, vendor, or other related record no longer exists. Refresh the form and select it again.',
+          );
+        }
+
+        if (error.code === 'P2000') {
+          const column = String(error.meta?.column_name || 'field');
+          throw new BadRequestException(
+            `The value entered for ${column} is too long.`,
+          );
+        }
+
+        if (error.code === 'P2025') {
+          throw new BadRequestException(
+            'A related record required to create this product was not found. Refresh the form and try again.',
+          );
+        }
+
+        if (error.code === 'P2028') {
+          throw new InternalServerErrorException(
+            'The database transaction could not be completed. No product was created; please retry.',
+          );
+        }
+      }
+
+      const reference = `PRODUCT-${Date.now().toString(36).toUpperCase()}`;
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown product creation error';
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      this.logger.error(
+        `[${reference}] Product creation failed: ${errorMessage}`,
+        errorStack,
+      );
+
+      throw new InternalServerErrorException({
+        message:
+          'The server could not save the product because of an unexpected database or storage error.',
+        errorCode: 'PRODUCT_CREATE_FAILED',
+        reference,
+        ...(process.env.NODE_ENV !== 'production' && {
+          details: [errorMessage],
+        }),
+      });
+    }
   }
 
   // ----------------------------------
