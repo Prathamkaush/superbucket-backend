@@ -15,7 +15,7 @@ async function bootstrap() {
   });
 
   // =====================================================
-  // TRUST PROXY (nginx / Cloudflare)
+  // TRUST PROXY (nginx / Cloudflare ) ------------------
   // =====================================================
   const server = app.getHttpAdapter().getInstance();
   server.set("trust proxy", 1);
@@ -46,7 +46,7 @@ async function bootstrap() {
     "https://first-female-admin.vercel.app",
 
     // Swagger UI
-    "https://apiv1.freeqr.live",
+    "https://api.firstfemale.in",
   ];
 
   app.enableCors({
@@ -97,7 +97,7 @@ async function bootstrap() {
     .setTitle("FirstFemale API")
     .setDescription("E-commerce backend API documentation")
     .setVersion("1.0")
-    .addServer("https://apiv1.freeqr.live")
+    .addServer("https://api.firstfemale.in")
     .addBearerAuth(
       {
         type: "http",
