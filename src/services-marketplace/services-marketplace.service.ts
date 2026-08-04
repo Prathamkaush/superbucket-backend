@@ -618,7 +618,7 @@ export class ServicesMarketplaceService {
   async getAvailableJobs(userId: number) {
     const profile = await this.requireApprovedProvider(userId);
     if (!profile.isOnline) return [];
-    const jobs = await this.prisma.serviceBooking.findMany({
+    return this.prisma.serviceBooking.findMany({
       where: {
         status: ServiceBookingStatus.PENDING,
         providerId: null,
@@ -633,11 +633,6 @@ export class ServicesMarketplaceService {
       orderBy: { createdAt: "asc" },
       take: 25,
     });
-    const city = String(profile.city || "").trim().toLowerCase();
-    const nearby = city
-      ? jobs.filter((job) => String((job.address as any)?.city || "").trim().toLowerCase() === city)
-      : jobs;
-    return nearby.slice(0, 5);
   }
 
   getProviderJobs(userId: number) {
